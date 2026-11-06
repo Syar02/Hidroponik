@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#eef1f6">
+<title>Kebun Hidroponik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+:root{
+  --bg:#eef1f6; --card:#ffffff; --fg:#111827; --fg2:#374151; --mut:#6b7280; --line:#e4e8ef;
+  --accent:#2f6bff; --accent-fg:#ffffff; --accent-soft:#e7eeff; --band:#cddbff;
+  --track:#e3e8f0; --bar:#d6dde8; --nav:#16181d; --nav-ic:#9aa1ad;
+  --good:#15803d; --good-bg:#dcfce7; --warn:#b45309; --warn-bg:#fef3c7; --bad:#b91c1c; --bad-bg:#fee2e2;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
+  --hero1:#0f3d2e; --hero2:#1d7a52;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b0e14; --card:#151a23; --fg:#e9edf4; --fg2:#c9d1dd; --mut:#94a0b2; --line:#252d3a;
+    --accent:#5b8cff; --accent-fg:#0b0e14; --accent-soft:#1b2747; --band:#2a3d6e;
+    --track:#262f3d; --bar:#2c3647; --nav:#1f2532; --nav-ic:#8a94a6;
+    --good:#4ade80; --good-bg:#12301f; --warn:#fbbf24; --warn-bg:#352a0f; --bad:#f87171; --bad-bg:#3a1717;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    --hero1:#0c2a20; --hero2:#156144;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 "Plus Jakarta Sans",system-ui,Segoe UI,Roboto,sans-serif;min-height:100vh}
+.app{max-width:440px;margin:0 auto;padding:20px 16px 120px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:10px}
+[hidden]{display:none!important}
+.mut{color:var(--mut)}
+.card{background:var(--card);border-radius:22px;padding:18px;box-shadow:var(--shadow)}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* ---------- Header ---------- */
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#34d399,#059669);color:#fff;flex:none}
+.top h1{font-size:1.15rem;line-height:1.25;margin:0;font-weight:700}
+.top p{margin:0;font-size:.85rem;color:var(--mut)}
+.round{width:44px;height:44px;border-radius:50%;border:0;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;margin-left:auto;flex:none}
+.pghead{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.pghead h2{margin:0 auto;font-size:1.1rem;font-weight:700;transform:translateX(-22px)}
+.pghead .round{margin:0}
+
+/* ---------- Connection pill ---------- */
+.conn{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;padding:6px 12px 6px 10px;border-radius:999px;background:var(--card);box-shadow:var(--shadow);color:var(--fg2)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.dot.ok{background:var(--good)}.dot.bad{background:var(--bad)}.dot.wait{background:var(--warn)}
+
+/* ---------- Chips ---------- */
+.chips{display:flex;gap:8px;overflow-x:auto;margin:16px -16px 14px;padding:0 16px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{border:0;background:var(--card);color:var(--fg2);padding:9px 16px;border-radius:999px;font-weight:600;font-size:.85rem;white-space:nowrap;box-shadow:var(--shadow)}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+
+/* ---------- Hero ---------- */
+.hero{position:relative;overflow:hidden;border-radius:24px;padding:20px;color:#fff;background:linear-gradient(140deg,var(--hero1),var(--hero2));min-height:150px}
+.hero svg.leaf{position:absolute;right:-18px;bottom:-22px;width:170px;height:170px;opacity:.22}
+.hero .k{font-size:.8rem;opacity:.85;font-weight:500}
+.hero .big{font-size:1.35rem;font-weight:700;margin:4px 0 10px;max-width:78%;line-height:1.25}
+.hero .row{display:flex;gap:8px;flex-wrap:wrap}
+.hero .tag{font-size:.75rem;background:rgba(255,255,255,.16);padding:5px 10px;border-radius:999px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+
+/* ---------- Tiles ---------- */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.tile{background:var(--card);border-radius:22px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px;min-width:0;border:0;text-align:left}
+.tile.wide{grid-column:1/-1}
+.tile .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.badge{width:40px;height:40px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+.tile .cat{font-size:.75rem;color:var(--mut);font-weight:500}
+.tile .nm{font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .val{font-size:1.7rem;font-weight:800;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+.tile .val small{font-size:.85rem;font-weight:600;color:var(--mut);margin-left:3px;letter-spacing:0}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;padding:4px 9px;border-radius:999px;background:var(--track);color:var(--fg2);width:max-content}
+.st.good{background:var(--good-bg);color:var(--good)}
+.st.warn{background:var(--warn-bg);color:var(--warn)}
+.st.bad{background:var(--bad-bg);color:var(--bad)}
+.st .ic{width:12px;height:12px;stroke-width:2.6}
+.pumpTile{flex-direction:row;align-items:center;gap:14px}
+.pumpTile .txt{flex:1;min-width:0}
+
+/* ---------- Switch ---------- */
+.sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--track);flex:none;transition:background .2s;padding:0}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+.sw[aria-checked="true"]{background:var(--accent)}
+.sw[aria-checked="true"]::after{transform:translateX(22px)}
+.sw:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- Bottom nav ---------- */
+.nav{position:fixed;left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom));display:flex;gap:6px;background:var(--nav);padding:8px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:10}
+.nav button{width:54px;height:54px;border-radius:50%;border:0;background:transparent;color:var(--nav-ic);display:grid;place-items:center}
+.nav button[aria-current="page"]{background:var(--accent);color:#fff}
+.nav .ic{width:22px;height:22px}
+
+/* ---------- Control page ---------- */
+.devcard{display:flex;align-items:center;gap:14px}
+.devcard .txt{flex:1;min-width:0}
+.devcard .cat{font-size:.78rem;color:var(--mut)}
+.devcard .nm{font-weight:700}
+.mini{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.mini .card{padding:14px;display:flex;flex-direction:column;gap:8px}
+.mini .lbl{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--mut);font-weight:600}
+.mini .lbl .badge{width:30px;height:30px;border-radius:10px}
+.mini .lbl .badge .ic{width:16px;height:16px}
+.mini .v{font-size:1.25rem;font-weight:800}
+.gaugeCard{margin-top:12px;text-align:center;padding:20px 12px 18px}
+.gauge{width:100%;max-width:300px;display:block;margin:0 auto}
+.gauge text{font-family:inherit}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--track);border-radius:14px;padding:4px;gap:4px}
+.seg button{border:0;background:transparent;padding:10px;border-radius:11px;font-weight:700;font-size:.88rem;color:var(--fg2)}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+.note{font-size:.8rem;color:var(--mut);margin:10px 2px 0}
+
+/* ---------- Chart page ---------- */
+.chartHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.chartHead .k{font-size:.82rem;color:var(--mut);font-weight:500}
+.chartHead .num{font-size:1.75rem;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.chartHead .num small{font-size:.9rem;color:var(--mut);font-weight:600;margin-left:4px}
+.delta{font-size:.8rem;color:var(--fg2);font-weight:600}
+select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:.82rem;padding:8px 28px 8px 12px;border-radius:12px;appearance:none;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 14px) 52%,calc(100% - 10px) 52%;background-size:4px 4px;background-repeat:no-repeat}
+.chartWrap{position:relative;margin-top:14px}
+.chartWrap svg{width:100%;height:auto;display:block;overflow:visible;touch-action:pan-y}
+.chartWrap text{font-family:inherit}
+.tip{position:absolute;pointer-events:none;background:var(--nav);color:#fff;font-size:.75rem;padding:7px 10px;border-radius:10px;white-space:nowrap;transform:translate(-50%,-100%);box-shadow:0 6px 18px rgba(0,0,0,.2);z-index:2}
+.tip b{font-size:.85rem}
+.empty{padding:40px 10px;text-align:center;color:var(--mut);font-size:.88rem}
+.sect{display:flex;justify-content:space-between;align-items:baseline;margin:22px 4px 10px}
+.sect h3{margin:0;font-size:1rem}
+.list{display:grid;gap:10px}
+.li{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:18px;padding:12px 14px;box-shadow:var(--shadow)}
+.li .badge{width:40px;height:40px}
+.li .txt{flex:1;min-width:0}
+.li .nm{font-weight:700;font-size:.92rem}
+.li .sub{font-size:.76rem;color:var(--mut)}
+.li .r{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.li .r small{display:block;font-size:.72rem;color:var(--mut);font-weight:600}
+.linkbtn{border:0;background:none;color:var(--accent);font-weight:700;font-size:.82rem;padding:4px}
+
+/* ---------- Settings ---------- */
+.kv{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.kv:last-child{border-bottom:0}
+.kv span:last-child{font-weight:700;text-align:right;word-break:break-all}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form label{display:grid;gap:6px;font-size:.78rem;color:var(--mut);font-weight:600}
+.form input{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 12px;font-weight:700;font-size:1rem;color:var(--fg)}
+.btn{width:100%;border:0;border-radius:16px;padding:15px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:.95rem}
+.btn.ghost{background:var(--card);color:var(--bad);box-shadow:var(--shadow)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.msg{font-size:.82rem;margin-top:10px;min-height:1.2em;color:var(--fg2)}
+.share{display:flex;gap:8px;margin-top:6px}
+.share input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;font:600 .8rem ui-monospace,Consolas,monospace;color:var(--fg2)}
+.share button{border:0;border-radius:12px;padding:0 14px;background:var(--accent-soft);color:var(--accent);font-weight:700}
+
+/* ---------- Onboarding ---------- */
+.onb{min-height:calc(100vh - 40px);display:flex;flex-direction:column;justify-content:flex-end;gap:18px;padding-bottom:20px}
+.onb .art{flex:1;display:grid;place-items:center;min-height:240px}
+.onb h1{font-size:2rem;line-height:1.15;margin:0;font-weight:800;letter-spacing:-.02em}
+.onb p{margin:0;color:var(--mut)}
+.onb input{width:100%;border:1px solid var(--line);background:var(--card);border-radius:16px;padding:15px;font:600 1rem ui-monospace,Consolas,monospace}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<!-- ============ Ikon SVG ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/><path d="M9.5 15.5a2.6 2.6 0 0 0 2.5 2"/></symbol>
+  <symbol id="i-temp" viewBox="0 0 24 24"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v7"/></symbol>
+  <symbol id="i-hum" viewBox="0 0 24 24"><path d="M7 4s4 4.4 4 7.3A4 4 0 0 1 3 11.3C3 8.4 7 4 7 4z"/><path d="M17 9s4 4.4 4 7.3a4 4 0 0 1-8 0C13 13.4 17 9 17 9z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-pump" viewBox="0 0 24 24"><rect x="4" y="9" width="12" height="11" rx="2"/><path d="M8 9V6a2 2 0 0 1 2-2h7v4M17 4h3M10 14h0"/><circle cx="10" cy="14.5" r="2"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 16v-4M12 16V8M16 16v-6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19c0-8 5-13 15-14-1 10-6 15-14 15"/><path d="M5 19l8-8"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16.1a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r=".8"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-dash" viewBox="0 0 24 24"><path d="M7 12h10"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ============ Onboarding (belum ada kode perangkat) ============ -->
+  <section class="onb" id="setup" hidden>
+    <div class="art" aria-hidden="true">
+      <svg viewBox="0 0 240 240" width="240" height="240">
+        <circle cx="120" cy="120" r="112" fill="var(--accent-soft)"/>
+        <rect x="40" y="150" width="160" height="34" rx="10" fill="var(--card)" stroke="var(--line)" stroke-width="2"/>
+        <g fill="var(--hero2)">
+          <path d="M70 150c-2-26 6-46 26-58-2 22-8 42-26 58z"/><path d="M70 150c-14-14-20-30-16-48 14 12 18 30 16 48z"/>
+          <path d="M120 150c-2-34 8-60 34-74-2 28-12 54-34 74z"/><path d="M120 150c-18-18-24-40-18-62 18 16 22 40 18 62z"/>
+          <path d="M170 150c-2-24 6-42 24-52-2 20-8 38-24 52z"/><path d="M170 150c-12-12-17-27-14-42 12 10 16 26 14 42z"/>
+        </g>
+        <g fill="var(--accent)"><circle cx="70" cy="167" r="6"/><circle cx="120" cy="167" r="6"/><circle cx="170" cy="167" r="6"/></g>
+      </svg>
+    </div>
+    <h1>Pantau Kebun Hidroponik dari Mana Saja</h1>
+    <p>pH larutan, suhu, kelembapan, dan cahaya secara real-time — plus kendali pompa koreksi pH langsung dari ponsel.</p>
+    <form id="setupForm" style="display:grid;gap:12px">
+      <label class="sr" for="code">Kode perangkat</label>
+      <input id="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Masukkan kode perangkat" required pattern="[A-Za-z0-9]{6,32}">
+      <button class="btn" type="submit">Mulai Pantau</button>
+    </form>
+  </section>
+
+  <!-- ============ Halaman: Beranda ============ -->
+  <section id="p-home" data-page hidden>
+    <div class="top">
+      <div class="avatar" aria-hidden="true"><svg class="ic"><use href="#i-leaf"/></svg></div>
+      <div>
+        <h1 id="greet">Halo, Petani</h1>
+        <p>Selamat datang di kebun hidroponik</p>
+      </div>
+      <button class="round" id="toSettings" aria-label="Pengaturan"><svg class="ic"><use href="#i-gear"/></svg></button>
+    </div>
+
+    <span class="conn" role="status"><span class="dot" id="dot"></span><span id="connText">Menghubungkan ke server…</span></span>
+
+    <div class="chips" role="group" aria-label="Filter sensor">
+      <button class="chip" data-f="all" aria-pressed="true">Semua</button>
+      <button class="chip" data-f="nutrisi" aria-pressed="false">Nutrisi</button>
+      <button class="chip" data-f="udara" aria-pressed="false">Udara</button>
+      <button class="chip" data-f="cahaya" aria-pressed="false">Cahaya</button>
+    </div>
+
+    <div class="hero">
+      <svg class="leaf" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.2"><use href="#i-leaf"/></svg>
+      <div class="k">Kondisi Kebun</div>
+      <div class="big" id="heroText">Menunggu data ESP32…</div>
+      <div class="row">
+        <span class="tag"><svg class="ic" style="width:14px;height:14px"><use href="#i-clock"/></svg><span id="heroTime">—</span></span>
+        <span class="tag"><svg class="ic" style="width:14px;height:14px"><use href="#i-wifi"/></svg><span id="heroRssi">—</span></span>
+      </div>
+    </div>
+
+    <div class="grid" id="tiles">
+      <button class="tile wide pumpTile" data-g="nutrisi" id="pumpTile" type="button">
+        <div class="badge"><svg class="ic"><use href="#i-pump"/></svg></div>
+        <div class="txt">
+          <div class="cat">Relay · GPIO25</div>
+          <div class="nm">Pompa Koreksi pH</div>
+          <div class="cat" id="pumpSub">—</div>
+        </div>
+        <span class="sw" id="swHome" role="switch" aria-checked="false" aria-label="Pompa koreksi pH" tabindex="0"></span>
+      </button>
+      <div class="tile" data-g="nutrisi">
+        <div class="hd"><div class="badge"><svg class="ic"><use href="#i-drop"/></svg></div><span class="st" id="st-ph">—</span></div>
+        <div class="cat">Nutrisi</div><div class="nm">pH Larutan</div>
+        <div class="val" id="v-ph">—</div>
+      </div>
+      <div class="tile" data-g="udara">
+        <div class="hd"><div class="badge"><svg class="ic"><use href="#i-temp"/></svg></div><span class="st" id="st-t">—</span></div>
+        <div class="cat">Udara</div><div class="nm">Suhu</div>
+        <div class="val" id="v-t">—</div>
+      </div>
+      <div class="tile" data-g="udara">
+        <div class="hd"><div class="badge"><svg class="ic"><use href="#i-hum"/></svg></div><span class="st" id="st-h">—</span></div>
+        <div class="cat">Udara</div><div class="nm">Kelembapan</div>
+        <div class="val" id="v-h">—</div>
+      </div>
+      <div class="tile" data-g="cahaya">
+        <div class="hd"><div class="badge"><svg class="ic"><use href="#i-sun"/></svg></div><span class="st" id="st-lux">—</span></div>
+        <div class="cat">Cahaya</div><div class="nm">Intensitas</div>
+        <div class="val" id="v-lux">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Halaman: Grafik ============ -->
+  <section id="p-chart" data-page hidden>
+    <div class="pghead">
+      <button class="round" data-go="home" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2>Statistik</h2>
+    </div>
+
+    <div class="card">
+      <div class="chartHead">
+        <div>
+          <div class="k" id="cKicker">Rata-rata 24 jam</div>
+          <div class="num" id="cNum">—</div>
+          <div class="delta" id="cDelta">&nbsp;</div>
+        </div>
+        <label class="sr" for="metric">Pilih sensor</label>
+        <select id="metric">
+          <option value="ph">pH Larutan</option>
+          <option value="t">Suhu</option>
+          <option value="h">Kelembapan</option>
+          <option value="lux">Cahaya</option>
+        </select>
+      </div>
+      <div class="seg" style="margin-top:14px" role="group" aria-label="Rentang waktu">
+        <button data-r="24h" aria-pressed="true">24 Jam</button>
+        <button data-r="live" aria-pressed="false">Live (30 mnt)</button>
+      </div>
+      <div class="chartWrap" id="chartWrap"></div>
+    </div>
+
+    <div class="sect"><h3>Ringkasan 24 Jam</h3><span class="mut" style="font-size:.78rem">min · maks</span></div>
+    <div class="list" id="summary"></div>
+  </section>
+
+  <!-- ============ Halaman: Kontrol ============ -->
+  <section id="p-control" data-page hidden>
+    <div class="pghead">
+      <button class="round" data-go="home" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2>Pompa pH</h2>
+    </div>
+
+    <div class="card devcard">
+      <div class="badge"><svg class="ic"><use href="#i-pump"/></svg></div>
+      <div class="txt"><div class="cat">Relay · GPIO25</div><div class="nm">Pompa Koreksi pH</div></div>
+      <button class="sw" id="swCtl" role="switch" aria-checked="false" aria-label="Nyalakan pompa"></button>
+    </div>
+
+    <div class="mini">
+      <div class="card">
+        <div class="lbl"><span class="badge"><svg class="ic"><use href="#i-auto"/></svg></span>Mode</div>
+        <div class="v" id="modeVal">—</div>
+      </div>
+      <div class="card">
+        <div class="lbl"><span class="badge"><svg class="ic"><use href="#i-clock"/></svg></span>Nyala hari ini</div>
+        <div class="v" id="onVal">—</div>
+      </div>
+    </div>
+
+    <div class="card gaugeCard">
+      <svg class="gauge" id="gauge" viewBox="0 -8 280 258" role="img" aria-label="Pengukur pH"></svg>
+      <div class="seg" role="group" aria-label="Mode kontrol" style="margin-top:6px">
+        <button data-mode="auto" aria-pressed="true">Otomatis</button>
+        <button data-mode="manual" aria-pressed="false">Manual</button>
+      </div>
+      <p class="note" id="modeNote">—</p>
+    </div>
+  </section>
+
+  <!-- ============ Halaman: Pengaturan ============ -->
+  <section id="p-settings" data-page hidden>
+    <div class="pghead">
+      <button class="round" data-go="home" aria-label="Kembali"><svg class="ic"><use href="#i-back"/></svg></button>
+      <h2>Pengaturan</h2>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:4px">Perangkat</div>
+      <div class="kv"><span class="mut">Kode perangkat</span><span id="sCode">—</span></div>
+      <div class="kv"><span class="mut">Server MQTT</span><span id="sBroker">—</span></div>
+      <div class="kv"><span class="mut">Status ESP32</span><span id="sDev">—</span></div>
+      <div class="kv"><span class="mut">Sinyal WiFi</span><span id="sRssi">—</span></div>
+      <div class="kv"><span class="mut">Waktu aktif</span><span id="sUp">—</span></div>
+      <div class="kv"><span class="mut">Tegangan sensor pH</span><span id="sVolt">—</span></div>
+      <div style="margin-top:10px;font-size:.78rem;color:var(--mut);font-weight:600">Link dashboard (bagikan ke anggota tim)</div>
+      <div class="share"><input id="shareLink" readonly aria-label="Link dashboard"><button id="copyBtn">Salin</button></div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div style="font-weight:700">Ambang pH (kontrol otomatis)</div>
+      <p class="note" style="margin:4px 0 14px">Pompa menyala jika pH di luar rentang, dan mati lagi setelah pH kembali ke dalam rentang (dikurangi histeresis).</p>
+      <form id="cfgForm" class="form">
+        <label>pH minimum<input id="cMin" type="number" step="0.1" min="0" max="14" inputmode="decimal" required></label>
+        <label>pH maksimum<input id="cMax" type="number" step="0.1" min="0" max="14" inputmode="decimal" required></label>
+        <label>Kalibrasi offset<input id="cOff" type="number" step="0.01" min="-3" max="3" inputmode="decimal" required></label>
+        <label>Histeresis<input id="cHyst" type="number" step="0.05" min="0" max="1" inputmode="decimal" required></label>
+        <button class="btn" type="submit" id="cfgBtn" style="grid-column:1/-1">Simpan ke ESP32</button>
+      </form>
+      <div class="msg" id="cfgMsg" role="status"></div>
+    </div>
+
+    <button class="btn ghost" id="forget" style="margin-top:12px">Ganti perangkat</button>
+  </section>
+</div>
+
+<nav class="nav" id="nav" aria-label="Navigasi" hidden>
+  <button data-go="home" aria-label="Beranda" aria-current="page"><svg class="ic"><use href="#i-home"/></svg></button>
+  <button data-go="chart" aria-label="Statistik"><svg class="ic"><use href="#i-chart"/></svg></button>
+  <button data-go="control" aria-label="Kontrol pompa"><svg class="ic"><use href="#i-sliders"/></svg></button>
+  <button data-go="settings" aria-label="Pengaturan"><svg class="ic"><use href="#i-gear"/></svg></button>
+</nav>
+
+<script>
+/* =================== Konfigurasi =================== */
+const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";   // harus sama dengan broker di ESP32
+const TOPIC_ROOT = "aranus";                            // BASE = aranus/<kode>/hidro
+const STALE_SEC  = 20;                                  // data dianggap basi jika > 20 dtk
+const LIVE_MAX_MS = 30 * 60 * 1000;                     // simpan 30 menit data live
+
+// Batas status di kartu (selain pH, yang mengikuti konfigurasi ESP32)
+const LIMITS = {
+  t:   { lo: 18, hi: 30, loTxt: "Dingin", hiTxt: "Panas", okTxt: "Normal" },
+  h:   { lo: 50, hi: 85, loTxt: "Kering", hiTxt: "Terlalu lembap", okTxt: "Normal" },
+  lux: { lo: 1000, hi: 60000, loTxt: "Redup", hiTxt: "Terik", okTxt: "Cukup" },
+};
+const METRICS = {
+  ph:  { name: "pH Larutan", unit: "pH",  dec: 2, icon: "i-drop" },
+  t:   { name: "Suhu Udara", unit: "°C",  dec: 1, icon: "i-temp" },
+  h:   { name: "Kelembapan", unit: "%",   dec: 0, icon: "i-hum" },
+  lux: { name: "Cahaya",     unit: "lux", dec: 0, icon: "i-sun" },
+};
+
+/* =================== Util =================== */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const NS = "http://www.w3.org/2000/svg";
+const isNum = v => typeof v === "number" && isFinite(v);
+const fmt = (v, d) => isNum(v) ? v.toLocaleString("id-ID", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const hhmm = ms => new Date(ms).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+const dur = s => { s = Math.max(0, s|0); const h = Math.floor(s/3600), m = Math.floor(s%3600/60); return h ? `${h} jam ${m} mnt` : m ? `${m} mnt` : `${s} dtk`; };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k)    { try { localStorage.removeItem(k); } catch (e) {} },
+};
+
+/* =================== Kode perangkat =================== */
+const CODE_KEY = "hidro-code";
+function getCode() {
+  const h = location.hash.replace(/^#/, "").trim();
+  if (/^[a-z0-9]{6,32}$/i.test(h)) { store.set(CODE_KEY, h); return h; }
+  const c = store.get(CODE_KEY, "");
+  if (c) history.replaceState(null, "", "#" + c);
+  return c;
+}
+$("#setupForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const c = $("#code").value.trim();
+  if (!/^[a-z0-9]{6,32}$/i.test(c)) return;
+  location.hash = c; location.reload();
+});
+
+/* =================== State =================== */
+const S = {
+  code: "", brokerOk: false, status: null, tele: null, teleAt: 0,
+  config: { ph_min: 5.5, ph_max: 8.5, ph_off: 0, hyst: 0.1 }, configKnown: false,
+  history: null, live: [], page: "home", filter: "all", metric: "ph", range: "24h",
+};
+let client = null, BASE = "";
+
+function deviceState() {
+  if (!S.brokerOk) return { cls: "bad", txt: "Server tidak terhubung, mencoba lagi…" };
+  if (!S.tele) return { cls: "wait", txt: "Menunggu data ESP32… (cek kode perangkat)" };
+  if (S.status === "offline") return { cls: "bad", txt: "ESP32 offline" };
+  if (isStale()) return { cls: "wait", txt: "ESP32 tidak mengirim data" };
+  return { cls: "ok", txt: "ESP32 online" };
+}
+function isStale() {
+  if (!S.tele) return true;
+  const ts = S.tele.ts ? S.tele.ts * 1000 : S.teleAt;
+  return Date.now() - ts > STALE_SEC * 1000;
+}
+const online = () => deviceState().cls === "ok";
+
+function status(k, v) {
+  if (!isNum(v)) return { cls: "", txt: "Tidak ada data", ic: "i-dash" };
+  if (k === "ph") {
+    const { ph_min: lo, ph_max: hi } = S.config;
+    if (v < lo) return { cls: "bad", txt: "Terlalu asam", ic: "i-alert" };
+    if (v > hi) return { cls: "bad", txt: "Terlalu basa", ic: "i-alert" };
+    return { cls: "good", txt: "Ideal", ic: "i-ok" };
+  }
+  const L = LIMITS[k];
+  if (k === "lux") return { cls: "", txt: v < L.lo ? L.loTxt : v > L.hi ? L.hiTxt : L.okTxt, ic: "i-sun" };
+  if (v < L.lo) return { cls: "warn", txt: L.loTxt, ic: "i-alert" };
+  if (v > L.hi) return { cls: "warn", txt: L.hiTxt, ic: "i-alert" };
+  return { cls: "good", txt: L.okTxt, ic: "i-ok" };
+}
+const stHTML = s => `<svg class="ic"><use href="#${s.ic}"/></svg>${esc(s.txt)}`;
+
+/* =================== Navigasi =================== */
+function go(p) {
+  S.page = p; store.set("hidro-page", p);
+  $$("[data-page]").forEach(s => s.hidden = s.id !== "p-" + p);
+  $$("#nav button").forEach(b => b.dataset.go === p ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
+  window.scrollTo(0, 0);
+  render();
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) go(b.dataset.go); });
+$("#toSettings").onclick = () => go("settings");
+$$(".chip").forEach(c => c.onclick = () => {
+  S.filter = c.dataset.f;
+  $$(".chip").forEach(x => x.setAttribute("aria-pressed", x === c));
+  $$("#tiles [data-g]").forEach(t => t.hidden = !(S.filter === "all" || t.dataset.g === S.filter));
+});
+
+/* =================== MQTT =================== */
+function send(cmd) {
+  if (!client || !S.brokerOk) return false;
+  client.publish(BASE + "/set", cmd);
+  return true;
+}
+function pushLive(t) {
+  const ts = t.ts ? t.ts * 1000 : Date.now();
+  const last = S.live[S.live.length - 1];
+  if (last && ts <= last.ts) return;
+  S.live.push({ ts, ph: t.ph, t: t.t, h: t.h, lux: t.lux });
+  const cut = Date.now() - LIVE_MAX_MS;
+  while (S.live.length && S.live[0].ts < cut) S.live.shift();
+}
+let saveTimer = 0;
+function saveLive() {
+  if (Date.now() - saveTimer < 10000) return;
+  saveTimer = Date.now();
+  store.set("hidro-live-" + S.code, S.live);
+}
+
+function connect() {
+  BASE = `${TOPIC_ROOT}/${S.code}/hidro`;
+  client = mqtt.connect(BROKER_URL, {
+    clientId: "web-" + Math.random().toString(16).slice(2, 10),
+    reconnectPeriod: 3000, connectTimeout: 10000, clean: true,
+  });
+  client.on("connect", () => {
+    S.brokerOk = true;
+    client.subscribe([BASE + "/telemetry", BASE + "/status", BASE + "/config", BASE + "/history"]);
+    send("ping");
+    render();
+  });
+  client.on("close", () => { S.brokerOk = false; render(); });
+  client.on("offline", () => { S.brokerOk = false; render(); });
+  client.on("message", (topic, msg) => {
+    const txt = msg.toString().trim();
+    const k = topic.slice(BASE.length + 1);
+    try {
+      if (k === "status") S.status = txt.toLowerCase();
+      else if (k === "telemetry") { S.tele = JSON.parse(txt); S.teleAt = Date.now(); pushLive(S.tele); saveLive(); }
+      else if (k === "config") { S.config = { ...S.config, ...JSON.parse(txt) }; S.configKnown = true; fillConfig(); }
+      else if (k === "history") S.history = JSON.parse(txt);
+    } catch (e) { console.warn("Pesan tidak valid", topic, txt); }
+    render();
+  });
+}
+
+/* =================== Render =================== */
+function render() {
+  const ds = deviceState();
+  $("#dot").className = "dot " + ds.cls;
+  $("#connText").textContent = ds.txt;
+  const t = S.tele || {};
+  if (S.page === "home") renderHome(t, ds);
+  if (S.page === "control") renderControl(t);
+  if (S.page === "chart") renderChart();
+  if (S.page === "settings") renderSettings(t, ds);
+}
+
+function renderHome(t, ds) {
+  for (const k of ["ph", "t", "h", "lux"]) {
+    const m = METRICS[k], v = t[k], s = status(k, v);
+    $("#v-" + k).innerHTML = isNum(v) ? `${fmt(v, m.dec)}<small>${k === "ph" ? "" : m.unit}</small>` : "—";
+    const el = $("#st-" + k); el.className = "st " + s.cls; el.innerHTML = stHTML(s);
+  }
+  const on = t.relay === 1;
+  $("#swHome").setAttribute("aria-checked", on);
+  $("#pumpSub").textContent = S.tele ? `${on ? "Menyala" : "Mati"} · Mode ${t.mode === "manual" ? "manual" : "otomatis"}` : "—";
+
+  let hero = "Menunggu data ESP32…";
+  if (ds.cls === "ok" || (S.tele && ds.cls === "wait")) {
+    const bad = ["ph", "t", "h"].map(k => [k, status(k, t[k])]).filter(([, s]) => s.cls === "bad" || s.cls === "warn");
+    if (!bad.length) hero = "Semua kondisi baik";
+    else hero = bad.map(([k, s]) => `${METRICS[k].name}: ${s.txt.toLowerCase()}`).join(", ");
+    if (ds.cls !== "ok") hero = "Data terakhir — " + hero;
+  } else if (ds.cls === "bad" && S.tele) hero = ds.txt;
+  $("#heroText").textContent = hero;
+  const ts = S.tele ? (t.ts ? t.ts * 1000 : S.teleAt) : 0;
+  $("#heroTime").textContent = ts ? "Diperbarui " + hhmm(ts) : "—";
+  $("#heroRssi").textContent = isNum(t.rssi) ? `${t.rssi} dBm` : "—";
+}
+
+/* ---- Pompa ---- */
+function togglePump() {
+  if (!S.tele) return;
+  send(S.tele.relay === 1 ? "relay=off" : "relay=on");
+}
+$("#swHome").addEventListener("click", e => { e.stopPropagation(); togglePump(); });
+$("#swHome").addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); togglePump(); } });
+$("#pumpTile").addEventListener("click", () => go("control"));
+$("#swCtl").onclick = togglePump;
+$$("[data-mode]").forEach(b => b.onclick = () => send("mode=" + b.dataset.mode));
+
+function renderControl(t) {
+  const on = t.relay === 1, manual = t.mode === "manual";
+  $("#swCtl").setAttribute("aria-checked", on);
+  $("#swCtl").disabled = !S.brokerOk || !S.tele;
+  $("#modeVal").textContent = S.tele ? (manual ? "Manual" : "Otomatis") : "—";
+  $("#onVal").textContent = isNum(t.on_s) ? dur(t.on_s) : "—";
+  $$("[data-mode]").forEach(b => b.setAttribute("aria-pressed", S.tele && (b.dataset.mode === "manual") === manual));
+  const { ph_min, ph_max } = S.config;
+  $("#modeNote").textContent = manual
+    ? "Mode manual: pompa dikendalikan dari tombol di atas. Kembali otomatis setelah 30 menit."
+    : `Mode otomatis: pompa menyala jika pH < ${fmt(ph_min, 1)} atau > ${fmt(ph_max, 1)}. Menekan tombol pompa akan beralih ke mode manual.`;
+  drawGauge(t.ph);
+}
+
+function drawGauge(v) {
+  const g = $("#gauge"), cx = 140, cy = 132, R = 104, MAX = 14;
+  const ang = x => (135 + 270 * Math.min(Math.max(x, 0), MAX) / MAX) * Math.PI / 180;
+  const pt = (x, r) => [cx + r * Math.cos(ang(x)), cy + r * Math.sin(ang(x))];
+  const arc = (a, b, r) => { const [x1, y1] = pt(a, r), [x2, y2] = pt(b, r); const large = (b - a) / MAX * 270 > 180 ? 1 : 0; return `M${x1.toFixed(1)} ${y1.toFixed(1)}A${r} ${r} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`; };
+  const { ph_min, ph_max } = S.config;
+  let h = `<path d="${arc(0, MAX, R)}" stroke="var(--track)" stroke-width="18" fill="none" stroke-linecap="round"/>`;
+  h += `<path d="${arc(ph_min, ph_max, R)}" stroke="var(--band)" stroke-width="18" fill="none"/>`;
+  if (isNum(v)) h += `<path d="${arc(0, Math.max(v, 0.05), R)}" stroke="var(--accent)" stroke-width="6" fill="none" stroke-linecap="round"/>`;
+  for (let i = 0; i <= 56; i++) {
+    const x = i / 56 * MAX, [x1, y1] = pt(x, R - 24), [x2, y2] = pt(x, R - (i % 4 ? 30 : 34));
+    h += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--mut)" stroke-opacity="${i % 4 ? .35 : .7}" stroke-width="1.5" stroke-linecap="round"/>`;
+  }
+  for (const [x, anchor] of [[0, "end"], [7, "middle"], [14, "start"]]) {
+    const [tx, ty] = pt(x, R + (x === 7 ? 26 : 18));
+    h += `<text x="${tx.toFixed(1)}" y="${(ty + (x === 7 ? -2 : 6)).toFixed(1)}" text-anchor="${anchor}" font-size="12" font-weight="600" fill="var(--mut)">${x}</text>`;
+  }
+  if (isNum(v)) { const [kx, ky] = pt(v, R); h += `<circle cx="${kx.toFixed(1)}" cy="${ky.toFixed(1)}" r="12" fill="var(--accent)" stroke="var(--card)" stroke-width="5"/>`; }
+  const s = status("ph", v);
+  h += `<text x="${cx}" y="${cy - 26}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--mut)">pH Larutan</text>`;
+  h += `<text x="${cx}" y="${cy + 16}" text-anchor="middle" font-size="46" font-weight="800" fill="var(--fg)" letter-spacing="-1">${fmt(v, 2)}</text>`;
+  h += `<text x="${cx}" y="${cy + 42}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--fg2)">${esc(s.txt)}</text>`;
+  h += `<text x="${cx}" y="${cy + 112}" text-anchor="middle" font-size="11.5" fill="var(--mut)">Target ${fmt(ph_min, 1)} – ${fmt(ph_max, 1)} (pita biru muda)</text>`;
+  g.innerHTML = h;
+  g.setAttribute("aria-label", `pH ${fmt(v, 2)}, target ${fmt(ph_min, 1)} sampai ${fmt(ph_max, 1)}`);
+}
+
+/* ---- Grafik ---- */
+$("#metric").onchange = e => { S.metric = e.target.value; renderChart(); };
+$$("[data-r]").forEach(b => b.onclick = () => { S.range = b.dataset.r; $$("[data-r]").forEach(x => x.setAttribute("aria-pressed", x === b)); renderChart(); });
+
+function histSeries(k) {
+  if (!S.history || !Array.isArray(S.history[k])) return [];
+  const arr = S.history[k], end = S.history.end * 1000;
+  return arr.map((v, i) => ({ ts: end - (arr.length - 1 - i) * 3600e3, v: isNum(v) ? v : null }));
+}
+const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+
+function renderChart() {
+  const k = S.metric, m = METRICS[k], wrap = $("#chartWrap");
+  if (S.range === "24h") {
+    const ser = histSeries(k), vals = ser.filter(p => p.v !== null);
+    const a = avg(vals.map(p => p.v));
+    $("#cKicker").textContent = `Rata-rata ${m.name.toLowerCase()} · 24 jam`;
+    $("#cNum").innerHTML = isNum(a) ? `${fmt(a, m.dec)}<small>${m.unit}</small>` : "—";
+    if (vals.length >= 2) {
+      const d = vals[vals.length - 1].v - vals[vals.length - 2].v;
+      $("#cDelta").textContent = `${d > 0 ? "▲" : d < 0 ? "▼" : "■"} ${fmt(Math.abs(d), m.dec)} ${m.unit} vs jam sebelumnya`;
+    } else $("#cDelta").innerHTML = "&nbsp;";
+    if (!vals.length) wrap.innerHTML = `<div class="empty">Belum ada riwayat per jam.<br>ESP32 mengirim riwayat setiap 1 menit setelah jam tersinkron (NTP).</div>`;
+    else drawBars(wrap, ser, m);
+  } else {
+    const pts = S.live.filter(p => isNum(p[k])).map(p => ({ ts: p.ts, v: p[k] }));
+    $("#cKicker").textContent = `${m.name} · live`;
+    $("#cNum").innerHTML = pts.length ? `${fmt(pts[pts.length - 1].v, m.dec)}<small>${m.unit}</small>` : "—";
+    $("#cDelta").textContent = pts.length >= 2 ? `${pts.length} pembacaan sejak ${hhmm(pts[0].ts)}` : " ";
+    if (pts.length < 2) wrap.innerHTML = `<div class="empty">Data live dikumpulkan selama halaman ini terbuka.<br>Tunggu beberapa detik…</div>`;
+    else drawLine(wrap, pts, m, k);
+  }
+  renderSummary();
+}
+
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), n = v / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+}
+
+function makeTip(wrap) { const t = document.createElement("div"); t.className = "tip"; t.hidden = true; wrap.appendChild(t); return t; }
+
+function drawBars(wrap, ser, m) {
+  const W = 340, H = 210, L = 34, R = 6, T = 30, B = 24, iw = W - L - R, ih = H - T - B;
+  const max = niceMax(Math.max(...ser.filter(p => p.v !== null).map(p => p.v)));
+  const n = ser.length, step = iw / n, bw = Math.max(4, step - 3);
+  const y = v => T + ih - (v / max) * ih;
+  let lastIdx = -1; ser.forEach((p, i) => { if (p.v !== null) lastIdx = i; });
+  let h = "";
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, yy = y(v);
+    h += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1" ${i ? 'stroke-dasharray="3 4"' : ""}/>`;
+    h += `<text x="${L - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="var(--mut)">${fmt(v, Number.isInteger(max / 4) ? 0 : 1)}</text>`;
+  }
+  ser.forEach((p, i) => {
+    const x = L + i * step + (step - bw) / 2;
+    if (p.v !== null && p.v > 0) {
+      const top = y(p.v), hh = T + ih - top, r = Math.min(4, bw / 2, hh);
+      h += `<path d="M${x} ${T + ih}V${top + r}Q${x} ${top} ${x + r} ${top}H${x + bw - r}Q${x + bw} ${top} ${x + bw} ${top + r}V${T + ih}Z" fill="${i === lastIdx ? "var(--accent)" : "var(--bar)"}"/>`;
+    }
+    if (i % 6 === 0 || i === n - 1) h += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--mut)">${hhmm(p.ts).slice(0, 2)}:00</text>`;
+    h += `<rect class="hit" data-i="${i}" x="${L + i * step}" y="${T}" width="${step}" height="${ih}" fill="transparent"/>`;
+  });
+  if (lastIdx >= 0) {
+    const p = ser[lastIdx], cx = L + lastIdx * step + step / 2, label = `${fmt(p.v, m.dec)} ${m.unit}`;
+    const w = label.length * 6.4 + 16, px = Math.min(Math.max(cx - w / 2, L), W - R - w), py = Math.max(2, y(p.v) - 30);
+    h += `<rect x="${px}" y="${py}" width="${w}" height="22" rx="11" fill="var(--accent)"/><text x="${px + w / 2}" y="${py + 15}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-fg)">${esc(label)}</text>`;
+  }
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Rata-rata per jam ${esc(m.name)} 24 jam terakhir">${h}</svg>`;
+  const svg = wrap.querySelector("svg"), tip = makeTip(wrap);
+  const show = el => {
+    const i = +el.dataset.i, p = ser[i], r = el.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+    tip.innerHTML = `${hhmm(p.ts)}–${hhmm(p.ts + 3600e3)}<br><b>${p.v === null ? "tidak ada data" : fmt(p.v, m.dec) + " " + m.unit}</b>`;
+    tip.hidden = false;
+    const left = Math.min(Math.max(r.left - wr.left + r.width / 2, 60), wr.width - 60);
+    tip.style.left = left + "px"; tip.style.top = (p.v !== null ? (y(p.v) / H) * wr.height - 8 : wr.height / 2) + "px";
+  };
+  svg.addEventListener("pointermove", e => { const el = e.target.closest(".hit"); if (el) show(el); });
+  svg.addEventListener("pointerdown", e => { const el = e.target.closest(".hit"); if (el) show(el); });
+  svg.addEventListener("pointerleave", () => tip.hidden = true);
+}
+
+function drawLine(wrap, pts, m, k) {
+  const W = 340, H = 210, L = 34, R = 8, T = 16, B = 24, iw = W - L - R, ih = H - T - B;
+  const t0 = pts[0].ts, t1 = Math.max(pts[pts.length - 1].ts, t0 + 60e3);
+  let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
+  if (k === "ph") { lo = Math.min(lo, S.config.ph_min); hi = Math.max(hi, S.config.ph_max); }
+  const pad = (hi - lo) * 0.12 || Math.max(Math.abs(hi) * 0.05, 0.5); lo -= pad; hi += pad;
+  const x = ts => L + (ts - t0) / (t1 - t0) * iw, y = v => T + ih - (v - lo) / (hi - lo) * ih;
+  let h = "";
+  if (k === "ph") {
+    const y1 = y(S.config.ph_max), y2 = y(S.config.ph_min);
+    h += `<rect x="${L}" y="${y1}" width="${iw}" height="${y2 - y1}" fill="var(--accent-soft)"/>`;
+    h += `<text x="${W - R - 4}" y="${y1 + 12}" text-anchor="end" font-size="9.5" fill="var(--mut)">rentang target</text>`;
+  }
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi - lo) * i / 4, yy = y(v);
+    h += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1" ${i ? 'stroke-dasharray="3 4"' : ""}/>`;
+    h += `<text x="${L - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="var(--mut)">${fmt(v, hi - lo < 5 ? 1 : 0)}</text>`;
+  }
+  for (let i = 0; i <= 3; i++) {
+    const ts = t0 + (t1 - t0) * i / 3;
+    h += `<text x="${x(ts)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}" font-size="10" fill="var(--mut)">${t1 - t0 < 600e3 ? new Date(ts).toLocaleTimeString("id-ID") : hhmm(ts)}</text>`;
+  }
+  // garis terputus bila ada jeda > 15 detik
+  let d = "", prev = null;
+  for (const p of pts) { d += `${prev && p.ts - prev.ts < 15000 ? "L" : "M"}${x(p.ts).toFixed(1)} ${y(p.v).toFixed(1)}`; prev = p; }
+  h += `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const lp = pts[pts.length - 1];
+  h += `<circle cx="${x(lp.ts)}" cy="${y(lp.v)}" r="4.5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>`;
+  h += `<g id="xh" visibility="hidden"><line y1="${T}" y2="${T + ih}" stroke="var(--mut)" stroke-width="1" stroke-dasharray="3 3"/><circle r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/></g>`;
+  h += `<rect id="hitArea" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik live ${esc(m.name)}">${h}</svg>`;
+  const svg = wrap.querySelector("svg"), tip = makeTip(wrap), xh = svg.querySelector("#xh");
+  const move = e => {
+    const r = svg.getBoundingClientRect(), sx = (e.clientX - r.left) / r.width * W;
+    const ts = t0 + (sx - L) / iw * (t1 - t0);
+    let best = pts[0]; for (const p of pts) if (Math.abs(p.ts - ts) < Math.abs(best.ts - ts)) best = p;
+    const px = x(best.ts), py = y(best.v);
+    xh.setAttribute("visibility", "visible");
+    xh.querySelector("line").setAttribute("x1", px); xh.querySelector("line").setAttribute("x2", px);
+    xh.querySelector("circle").setAttribute("cx", px); xh.querySelector("circle").setAttribute("cy", py);
+    tip.innerHTML = `${new Date(best.ts).toLocaleTimeString("id-ID")}<br><b>${fmt(best.v, m.dec)} ${m.unit}</b>`;
+    tip.hidden = false;
+    tip.style.left = Math.min(Math.max(px / W * r.width, 60), r.width - 60) + "px";
+    tip.style.top = (py / H * r.height - 10) + "px";
+  };
+  svg.addEventListener("pointermove", move);
+  svg.addEventListener("pointerdown", move);
+  svg.addEventListener("pointerleave", () => { tip.hidden = true; xh.setAttribute("visibility", "hidden"); });
+}
+
+function renderSummary() {
+  const rows = ["ph", "t", "h", "lux"].map(k => {
+    const m = METRICS[k], vals = histSeries(k).filter(p => p.v !== null).map(p => p.v);
+    const cur = S.tele ? S.tele[k] : null;
+    const sub = vals.length ? `${fmt(Math.min(...vals), m.dec)} · ${fmt(Math.max(...vals), m.dec)} ${m.unit}` : "belum ada riwayat";
+    return `<button class="li" style="border:0;text-align:left;width:100%" data-metric="${k}">
+      <div class="badge"><svg class="ic"><use href="#${m.icon}"/></svg></div>
+      <div class="txt"><div class="nm">${m.name}</div><div class="sub">${sub}</div></div>
+      <div class="r">${fmt(cur, m.dec)} ${k === "ph" ? "" : m.unit}<small>sekarang</small></div></button>`;
+  });
+  $("#summary").innerHTML = rows.join("");
+  $$("#summary [data-metric]").forEach(b => b.onclick = () => { S.metric = b.dataset.metric; $("#metric").value = S.metric; renderChart(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+}
+
+/* ---- Pengaturan ---- */
+function fillConfig() {
+  if (document.activeElement && document.activeElement.closest("#cfgForm")) return;  // jangan timpa saat mengetik
+  $("#cMin").value = S.config.ph_min; $("#cMax").value = S.config.ph_max;
+  $("#cOff").value = S.config.ph_off; $("#cHyst").value = S.config.hyst;
+}
+$("#cfgForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const mn = parseFloat($("#cMin").value), mx = parseFloat($("#cMax").value), off = parseFloat($("#cOff").value), hy = parseFloat($("#cHyst").value);
+  const msg = $("#cfgMsg");
+  if (!(mn < mx)) { msg.textContent = "pH minimum harus lebih kecil dari pH maksimum."; return; }
+  if (!(mx - mn > 2 * hy)) { msg.textContent = "Rentang pH terlalu sempit untuk nilai histeresis ini."; return; }
+  if (!S.brokerOk) { msg.textContent = "Server belum terhubung."; return; }
+  // urutan penting: firmware menolak ph_min >= ph_max yang sedang berlaku
+  const cmds = mn >= S.config.ph_max ? [`ph_max=${mx}`, `ph_min=${mn}`] : [`ph_min=${mn}`, `ph_max=${mx}`];
+  [...cmds, `ph_off=${off}`, `hyst=${hy}`].forEach(send);
+  msg.textContent = online() ? "Terkirim. Menunggu konfirmasi dari ESP32…" : "Terkirim, tetapi ESP32 sedang offline — perintah akan hilang.";
+  const before = JSON.stringify(S.config);
+  setTimeout(() => { if (JSON.stringify(S.config) !== before) msg.textContent = "✓ Tersimpan di ESP32."; }, 2500);
+});
+$("#copyBtn").onclick = async () => {
+  const inp = $("#shareLink");
+  try { await navigator.clipboard.writeText(inp.value); } catch (e) { inp.select(); document.execCommand("copy"); }
+  $("#copyBtn").textContent = "Tersalin"; setTimeout(() => $("#copyBtn").textContent = "Salin", 1500);
+};
+$("#forget").onclick = () => {
+  if (!confirm("Lepas perangkat ini dari browser? Anda bisa masuk lagi dengan kode perangkat.")) return;
+  store.del(CODE_KEY); store.del("hidro-live-" + S.code);
+  history.replaceState(null, "", location.pathname); location.reload();
+};
+
+function renderSettings(t, ds) {
+  $("#sCode").textContent = S.code;
+  $("#sBroker").textContent = S.brokerOk ? "Terhubung" : "Terputus";
+  $("#sDev").textContent = ds.txt;
+  $("#sRssi").textContent = isNum(t.rssi) ? `${t.rssi} dBm` : "—";
+  $("#sUp").textContent = isNum(t.up) ? dur(t.up) : "—";
+  $("#sVolt").textContent = isNum(t.v) ? `${fmt(t.v, 3)} V` : "—";
+  $("#shareLink").value = location.origin + location.pathname + "#" + S.code;
+  $("#cfgBtn").disabled = !S.brokerOk;
+}
+
+/* =================== Start =================== */
+S.code = getCode();
+if (!S.code) {
+  $("#setup").hidden = false;
+} else {
+  S.live = store.get("hidro-live-" + S.code, []).filter(p => p && p.ts > Date.now() - LIVE_MAX_MS);
+  $("#nav").hidden = false;
+  fillConfig();
+  go(store.get("hidro-page", "home"));
+  connect();
+  setInterval(render, 5000);   // perbarui status "basi"/online
+}
+window.addEventListener("hashchange", () => location.reload());
+</script>
+</body>
+</html>
