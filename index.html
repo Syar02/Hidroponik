@@ -170,6 +170,39 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
 .onb input{width:100%;border:1px solid var(--line);background:var(--card);border-radius:16px;padding:15px;font:600 1rem ui-monospace,Consolas,monospace}
 
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.setGrid{display:grid;gap:12px}
+
+/* ---------- Tablet / laptop kecil ---------- */
+@media (min-width:700px){
+  .app{max-width:780px;padding:28px 24px 130px}
+  .chips{margin:18px 0 16px;padding:0}
+  .hero{min-height:170px;padding:26px}
+  .hero .big{font-size:1.6rem}
+  .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .mini .v{font-size:1.4rem}
+  .setGrid{grid-template-columns:1fr 1fr;align-items:start}
+  .setGrid .btn.ghost{grid-column:1/-1;justify-self:start;width:auto;padding:13px 24px}
+  .onb{max-width:520px;margin:0 auto}
+}
+
+/* ---------- Laptop / desktop: dashboard satu layar ---------- */
+@media (min-width:1100px){
+  .app{max-width:1320px;padding:32px 36px 40px 132px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:8px 28px;align-items:start}
+  .app > .onb{grid-column:1/-1}
+  #p-home{grid-column:1;grid-row:1}
+  #p-chart{grid-column:1;grid-row:2;margin-top:16px}
+  #p-control{grid-column:2;grid-row:1/span 2;position:sticky;top:32px}
+  #p-settings{grid-column:1/-1;grid-row:1}
+  .nav{left:28px;top:50%;bottom:auto;transform:translateY(-50%);flex-direction:column;gap:8px;padding:10px}
+  body.combo .pghead .round{display:none}
+  body.combo .pghead{margin-bottom:12px}
+  body.combo .pghead h2{transform:none;margin:0;font-size:1.15rem}
+  body.combo #p-control .pghead{margin-top:6px}
+  .hero{min-height:190px}
+  .tile .val{font-size:1.9rem}
+  #p-settings .pghead h2{transform:none;margin:0}
+  #p-settings .pghead .round{display:none}
+}
 </style>
 </head>
 <body>
@@ -356,6 +389,7 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
       <h2>Pengaturan</h2>
     </div>
 
+    <div class="setGrid">
     <div class="card">
       <div style="font-weight:700;margin-bottom:4px">Perangkat</div>
       <div class="kv"><span class="mut">Kode perangkat</span><span id="sCode">—</span></div>
@@ -368,7 +402,7 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
       <div class="share"><input id="shareLink" readonly aria-label="Link dashboard"><button id="copyBtn">Salin</button></div>
     </div>
 
-    <div class="card" style="margin-top:12px">
+    <div class="card">
       <div style="font-weight:700">Ambang pH (kontrol otomatis)</div>
       <p class="note" style="margin:4px 0 14px">Pompa menyala jika pH di luar rentang, dan mati lagi setelah pH kembali ke dalam rentang (dikurangi histeresis).</p>
       <form id="cfgForm" class="form">
@@ -381,7 +415,8 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
       <div class="msg" id="cfgMsg" role="status"></div>
     </div>
 
-    <button class="btn ghost" id="forget" style="margin-top:12px">Ganti perangkat</button>
+    <button class="btn ghost" id="forget">Ganti perangkat</button>
+    </div>
   </section>
 </div>
 
@@ -482,13 +517,22 @@ function status(k, v) {
 const stHTML = s => `<svg class="ic"><use href="#${s.ic}"/></svg>${esc(s.txt)}`;
 
 /* =================== Navigasi =================== */
+// Di layar lebar, Beranda + Statistik + Kontrol tampil bersamaan
+const DESK = matchMedia("(min-width:1100px)");
+const COMBO = ["home", "chart", "control"];
 function go(p) {
   S.page = p; store.set("hidro-page", p);
-  $$("[data-page]").forEach(s => s.hidden = s.id !== "p-" + p);
+  const combo = DESK.matches && COMBO.includes(p);
+  document.body.classList.toggle("combo", combo);
+  $$("[data-page]").forEach(s => s.hidden = combo ? !COMBO.includes(s.id.slice(2)) : s.id !== "p-" + p);
   $$("#nav button").forEach(b => b.dataset.go === p ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
-  window.scrollTo(0, 0);
   render();
+  if (combo && p === "chart") $("#p-chart").scrollIntoView({ behavior: "smooth", block: "start" });
+  else window.scrollTo(0, 0);
 }
+DESK.addEventListener("change", () => go(S.page));
+let rzT = 0;
+window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(render, 150); });
 document.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) go(b.dataset.go); });
 $("#toSettings").onclick = () => go("settings");
 $$(".chip").forEach(c => c.onclick = () => {
@@ -551,10 +595,11 @@ function render() {
   $("#dot").className = "dot " + ds.cls;
   $("#connText").textContent = ds.txt;
   const t = S.tele || {};
-  if (S.page === "home") renderHome(t, ds);
-  if (S.page === "control") renderControl(t);
-  if (S.page === "chart") renderChart();
-  if (S.page === "settings") renderSettings(t, ds);
+  const vis = id => !$("#p-" + id).hidden;
+  if (vis("home")) renderHome(t, ds);
+  if (vis("control")) renderControl(t);
+  if (vis("chart")) renderChart();
+  if (vis("settings")) renderSettings(t, ds);
 }
 
 function renderHome(t, ds) {
@@ -675,10 +720,12 @@ function niceMax(v) {
 
 function makeTip(wrap) { const t = document.createElement("div"); t.className = "tip"; t.hidden = true; wrap.appendChild(t); return t; }
 
+const chartSize = wrap => { const W = Math.max(300, Math.round(wrap.clientWidth || 340)); return [W, W > 560 ? 260 : 210]; };
+
 function drawBars(wrap, ser, m) {
-  const W = 340, H = 210, L = 34, R = 6, T = 30, B = 24, iw = W - L - R, ih = H - T - B;
+  const [W, H] = chartSize(wrap), L = 34, R = 6, T = 30, B = 24, iw = W - L - R, ih = H - T - B;
   const max = niceMax(Math.max(...ser.filter(p => p.v !== null).map(p => p.v)));
-  const n = ser.length, step = iw / n, bw = Math.max(4, step - 3);
+  const n = ser.length, step = iw / n, bw = Math.max(4, Math.min(step - 3, step * 0.72));
   const y = v => T + ih - (v / max) * ih;
   let lastIdx = -1; ser.forEach((p, i) => { if (p.v !== null) lastIdx = i; });
   let h = "";
@@ -716,7 +763,7 @@ function drawBars(wrap, ser, m) {
 }
 
 function drawLine(wrap, pts, m, k) {
-  const W = 340, H = 210, L = 34, R = 8, T = 16, B = 24, iw = W - L - R, ih = H - T - B;
+  const [W, H] = chartSize(wrap), L = 34, R = 8, T = 16, B = 24, iw = W - L - R, ih = H - T - B;
   const t0 = pts[0].ts, t1 = Math.max(pts[pts.length - 1].ts, t0 + 60e3);
   let lo = Math.min(...pts.map(p => p.v)), hi = Math.max(...pts.map(p => p.v));
   if (k === "ph") { lo = Math.min(lo, S.config.ph_min); hi = Math.max(hi, S.config.ph_max); }
@@ -813,7 +860,7 @@ $("#forget").onclick = () => {
 function renderSettings(t, ds) {
   $("#sCode").textContent = S.code;
   $("#sBroker").textContent = S.brokerOk ? "Terhubung" : "Terputus";
-  $("#sDev").textContent = ds.txt;
+  $("#sDev").textContent = { ok: "Online", bad: S.brokerOk ? "Offline" : "—", wait: S.tele ? "Tidak mengirim data" : "Belum ada data" }[ds.cls];
   $("#sRssi").textContent = isNum(t.rssi) ? `${t.rssi} dBm` : "—";
   $("#sUp").textContent = isNum(t.up) ? dur(t.up) : "—";
   $("#sVolt").textContent = isNum(t.v) ? `${fmt(t.v, 3)} V` : "—";
