@@ -489,9 +489,10 @@ let client = null, BASE = "";
 function deviceState() {
   if (!S.brokerOk) return { cls: "bad", txt: "Server tidak terhubung, mencoba lagi…" };
   if (!S.tele) return { cls: "wait", txt: "Menunggu data ESP32… (cek kode perangkat)" };
+  // Data segar = pasti online (pesan "offline" bisa datang terlambat saat ESP32 restart)
+  if (!isStale()) return { cls: "ok", txt: "ESP32 online" };
   if (S.status === "offline") return { cls: "bad", txt: "ESP32 offline" };
-  if (isStale()) return { cls: "wait", txt: "ESP32 tidak mengirim data" };
-  return { cls: "ok", txt: "ESP32 online" };
+  return { cls: "wait", txt: "ESP32 tidak mengirim data" };
 }
 function isStale() {
   if (!S.tele) return true;
