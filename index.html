@@ -45,7 +45,8 @@ button{cursor:pointer}
 
 /* ---------- Header ---------- */
 .top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
-.avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#34d399,#059669);color:#fff;flex:none}
+.avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#34d399,#059669);color:#fff;flex:none;font-weight:800;font-size:1rem;letter-spacing:.02em}
+#greet{cursor:pointer}
 .top h1{font-size:1.15rem;line-height:1.25;margin:0;font-weight:700}
 .top p{margin:0;font-size:.85rem;color:var(--mut)}
 .round{width:44px;height:44px;border-radius:50%;border:0;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;margin-left:auto;flex:none}
@@ -255,7 +256,7 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
   <!-- ============ Halaman: Beranda ============ -->
   <section id="p-home" data-page hidden>
     <div class="top">
-      <div class="avatar" aria-hidden="true"><svg class="ic"><use href="#i-leaf"/></svg></div>
+      <div class="avatar" id="avatar" aria-hidden="true"><svg class="ic"><use href="#i-leaf"/></svg></div>
       <div>
         <h1 id="greet">Halo, Petani</h1>
         <p>Selamat datang di kebun hidroponik</p>
@@ -413,6 +414,18 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
         <button class="btn" type="submit" id="cfgBtn" style="grid-column:1/-1">Simpan ke ESP32</button>
       </form>
       <div class="msg" id="cfgMsg" role="status"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700">Profil</div>
+      <p class="note" style="margin:4px 0 14px">Nama ini muncul di sapaan beranda dan tersimpan di browser ini.</p>
+      <form id="nameForm" style="display:grid;gap:12px">
+        <label style="display:grid;gap:6px;font-size:.78rem;color:var(--mut);font-weight:600">Nama pemilik
+          <input id="ownerName" maxlength="30" autocomplete="name" placeholder="mis. Sari Oktavia" style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 12px;font-weight:700;font-size:1rem;color:var(--fg)">
+        </label>
+        <button class="btn" type="submit">Simpan nama</button>
+      </form>
+      <div class="msg" id="nameMsg" role="status"></div>
     </div>
 
     <button class="btn ghost" id="forget">Ganti perangkat</button>
@@ -870,6 +883,24 @@ function renderSettings(t, ds) {
 }
 
 /* =================== Start =================== */
+/* ---- Nama pemilik ---- */
+const nameKey = () => "hidro-owner-" + S.code;
+function applyName() {
+  const n = String(store.get(nameKey(), "")).trim();
+  $("#greet").textContent = "Halo, " + (n || "Petani");
+  const initials = n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+  $("#avatar").innerHTML = initials ? esc(initials) : '<svg class="ic"><use href="#i-leaf"/></svg>';
+  $("#ownerName").value = n;
+}
+$("#nameForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const n = $("#ownerName").value.trim().slice(0, 30);
+  n ? store.set(nameKey(), n) : store.del(nameKey());
+  applyName();
+  $("#nameMsg").textContent = n ? `✓ Tersimpan. Sapaan: "Halo, ${n}"` : "Nama dihapus, kembali ke \"Petani\".";
+});
+$("#greet").addEventListener("click", () => { go("settings"); setTimeout(() => $("#ownerName").focus(), 50); });
+
 S.code = getCode();
 if (!S.code) {
   $("#setup").hidden = false;
@@ -877,6 +908,7 @@ if (!S.code) {
   S.live = store.get("hidro-live-" + S.code, []).filter(p => p && p.ts > Date.now() - LIVE_MAX_MS);
   $("#nav").hidden = false;
   fillConfig();
+  applyName();
   go(store.get("hidro-page", "home"));
   connect();
   setInterval(render, 5000);   // perbarui status "basi"/online
