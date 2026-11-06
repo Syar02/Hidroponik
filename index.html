@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
+<!-- NAIKKAN nilai ini setiap kali index.html diubah, agar browser pengguna otomatis memuat versi baru -->
+<meta name="app-version" content="2026-11-06.4">
 <meta name="theme-color" content="#eef1f6">
 <title>Kebun Hidroponik</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -421,7 +423,7 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
       <p class="note" style="margin:4px 0 14px">Nama ini muncul di sapaan beranda dan tersimpan di browser ini.</p>
       <form id="nameForm" style="display:grid;gap:12px">
         <label style="display:grid;gap:6px;font-size:.78rem;color:var(--mut);font-weight:600">Nama pemilik
-          <input id="ownerName" maxlength="30" autocomplete="name" placeholder="mis. Sari Oktavia" style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 12px;font-weight:700;font-size:1rem;color:var(--fg)">
+          <input id="ownerName" maxlength="30" autocomplete="name" placeholder="mis. Aranus" style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:11px 12px;font-weight:700;font-size:1rem;color:var(--fg)">
         </label>
         <button class="btn" type="submit">Simpan nama</button>
       </form>
@@ -429,6 +431,7 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
     </div>
 
     <button class="btn ghost" id="forget">Ganti perangkat</button>
+    <p class="note" style="grid-column:1/-1;text-align:center" id="appVer"></p>
     </div>
   </section>
 </div>
@@ -442,6 +445,8 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
 
 <script>
 /* =================== Konfigurasi =================== */
+// Versi diambil dari <meta name="app-version"> di <head>
+const APP_VERSION = document.querySelector('meta[name="app-version"]').content;
 const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";   // harus sama dengan broker di ESP32
 const TOPIC_ROOT = "aranus";                            // BASE = aranus/<kode>/hidro
 const STALE_SEC  = 20;                                  // data dianggap basi jika > 20 dtk
@@ -914,6 +919,20 @@ if (!S.code) {
   setInterval(render, 5000);   // perbarui status "basi"/online
 }
 window.addEventListener("hashchange", () => location.reload());
+
+/* ---- Pembaruan otomatis (GitHub Pages meng-cache halaman ±10 menit) ---- */
+$("#appVer").textContent = "Versi dashboard " + APP_VERSION;
+window.checkUpdate = async function () {
+  if (location.protocol === "file:") return;
+  try {
+    const r = await fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store" });
+    const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    const v = doc.querySelector('meta[name="app-version"]')?.content;
+    if (v && v !== APP_VERSION) location.replace(location.pathname + "?v=" + encodeURIComponent(v) + location.hash);
+  } catch (e) {}
+};
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
 </script>
 </body>
 </html>
