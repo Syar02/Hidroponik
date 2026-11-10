@@ -3,7 +3,8 @@ Simulator ESP32 hidroponik — untuk menguji dashboard tanpa hardware.
 
 Memakai topik & format yang sama persis dengan firmware.
     pip install paho-mqtt
-    python sim_esp32.py hd7p2kq9vm
+    python sim_esp32.py hd7p2kq9vm          # meniru mode WiFi
+    python sim_esp32.py hd7p2kq9vm --lte    # meniru mode seluler 4G (A7670E)
 Lalu buka dashboard dengan #hd7p2kq9vm.
 """
 import json
@@ -14,7 +15,10 @@ import time
 
 import paho.mqtt.client as mqtt
 
-CODE = sys.argv[1] if len(sys.argv) > 1 else "hd7p2kq9vm"
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+CODE = ARGS[0] if ARGS else "hd7p2kq9vm"
+NET = "lte" if "--lte" in sys.argv else "wifi"
+PUB_EVERY = 5 if NET == "lte" else 2      # sama dengan firmware masing-masing mode
 HOST, PORT = "broker.emqx.io", 1883
 BASE = f"aranus/{CODE}/hidro"
 
@@ -86,7 +90,7 @@ cli.will_set(BASE + "/status", "offline", qos=1, retain=True)
 cli.on_connect, cli.on_message = on_connect, on_message
 cli.connect(HOST, PORT, keepalive=30)
 cli.loop_start()
-print(f"Simulator berjalan. Topik: {BASE}/#   (Ctrl+C untuk berhenti)")
+print(f"Simulator berjalan (mode {NET.upper()}). Topik: {BASE}/#   (Ctrl+C untuk berhenti)")
 
 last_pub = last_hist = 0.0
 prev = time.time()
@@ -104,10 +108,10 @@ try:
                 st["relay"] = 1
             elif cfg["ph_min"] + cfg["hyst"] <= s["ph"] <= cfg["ph_max"] - cfg["hyst"]:
                 st["relay"] = 0
-        if force or now - last_pub >= 2:
+        if force or now - last_pub >= PUB_EVERY:
             force, last_pub = False, now
             tele = {**s, "relay": st["relay"], "mode": st["mode"], "on_s": int(st["on_s"]),
-                    "rssi": random.randint(-70, -55), "up": int(now - t_start), "ts": int(now)}
+                    "rssi": random.randint(-70, -55), "net": NET, "up": int(now - t_start), "ts": int(now)}
             cli.publish(BASE + "/telemetry", json.dumps(tele), retain=True)
         if now - last_hist >= 60:
             last_hist = now

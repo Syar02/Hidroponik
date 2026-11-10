@@ -1,12 +1,17 @@
 /*
- * Monitoring Hidroponik ESP32 + MQTT
- * ------------------------------------------------------------
+ * ============================================================
+ *  MODE WiFi  —  Monitoring Hidroponik ESP32 + MQTT
+ * ============================================================
+ * Pakai mode ini bila di lokasi kebun ADA WiFi 2,4 GHz.
+ * (Bila tidak ada WiFi, pakai firmware/mode_lte_a7670e.)
+ *
  * Sensor : pH (analog GPIO32), SHT31 (suhu & kelembapan), BH1750 (lux)
  * Aktuator: Relay pompa koreksi pH (GPIO25, aktif LOW)
  * Tampilan: LCD I2C 16x2 (3 halaman bergantian)
  *
  * Data dikirim ke broker MQTT publik (broker.emqx.io) dan dibaca oleh
- * dashboard web:  https://<username>.github.io/<repo>/#<DEVICE_CODE>
+ * dashboard web:  https://syar02.github.io/Hidroponik/#<DEVICE_CODE>
+ * Telemetry membawa "net":"wifi" sehingga dashboard menampilkan "Mode WiFi".
  *
  * Topik (BASE = "aranus/<DEVICE_CODE>/hidro"):
  *   BASE/telemetry  -> JSON data sensor terbaru (retained, tiap 2 detik)
@@ -37,8 +42,11 @@
 #include <BH1750.h>
 
 // ======================= KONFIGURASI =======================
-const char* WIFI_SSID   = "NAMA_WIFI";
-const char* WIFI_PASS   = "PASSWORD_WIFI";
+// Nama & password WiFi ada di wifi_config.h (salin dari wifi_config.example.h).
+// File itu diabaikan git agar password tidak ikut ter-upload ke GitHub.
+#include "wifi_config.h"
+
+#define MODE_NAME "WiFi"
 
 // Kode unik perangkat. Dipakai di link dashboard: .../#hd7p2kq9vm
 // Ganti dengan kode acak milik Anda (huruf kecil + angka, 6-32 karakter).
@@ -192,7 +200,7 @@ void publishTelemetry() {
   char buf[320];
   snprintf(buf, sizeof(buf),
     "{\"ph\":%s,\"v\":%s,\"t\":%s,\"h\":%s,\"lux\":%s,\"relay\":%d,\"mode\":\"%s\","
-    "\"on_s\":%lu,\"rssi\":%d,\"up\":%lu,\"ts\":%ld}",
+    "\"on_s\":%lu,\"rssi\":%d,\"net\":\"wifi\",\"up\":%lu,\"ts\":%ld}",
     sPh, sV, sT, sH, sL, relayOn ? 1 : 0, autoMode ? "auto" : "manual",
     relayOnMsToday / 1000UL, WiFi.RSSI(), millis() / 1000UL, (long)(now > 1700000000 ? now : 0));
   mqtt.publish(T_TELE.c_str(), buf, true);
@@ -257,11 +265,44 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
   forcePublish = true;
 }
 
+const char* wifiStatusText(wl_status_t s) {
+  switch (s) {
+    case WL_NO_SSID_AVAIL:  return "SSID tidak ditemukan (cek nama WiFi / harus 2.4 GHz)";
+    case WL_CONNECT_FAILED: return "gagal (cek password)";
+    case WL_CONNECTION_LOST:return "koneksi terputus";
+    case WL_DISCONNECTED:   return "belum terhubung";
+    case WL_IDLE_STATUS:    return "menunggu";
+    default:                return "lainnya";
+  }
+}
+
+// Pindai WiFi sekitar agar mudah mendiagnosa salah nama / 5 GHz
+void scanWifi() {
+  Serial.println("[WiFi] memindai jaringan...");
+  int n = WiFi.scanNetworks();
+  bool found = false;
+  for (int i = 0; i < n; i++) {
+    bool match = WiFi.SSID(i) == WIFI_SSID;
+    found |= match;
+    Serial.printf("  %s \"%s\"  %d dBm  ch%d\n", match ? ">>" : "  ",
+                  WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.channel(i));
+  }
+  if (!found) Serial.printf("[WiFi] \"%s\" TIDAK terlihat. Pastikan hotspot/router aktif & 2.4 GHz.\n", WIFI_SSID);
+  WiFi.scanDelete();
+}
+
 void ensureWifi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  if (millis() - tWifi < 10000) return;
+  static bool wasConnected = false;
+  bool c = WiFi.status() == WL_CONNECTED;
+  if (c != wasConnected) {
+    wasConnected = c;
+    if (c) Serial.printf("[WiFi] terhubung: %s (%d dBm)\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    else   Serial.println("[WiFi] terputus");
+  }
+  if (c) return;
+  if (millis() - tWifi < 20000) return;   // beri waktu proses koneksi selesai
   tWifi = millis();
-  Serial.println("[WiFi] menyambung ulang...");
+  Serial.printf("[WiFi] status: %s -> mencoba lagi\n", wifiStatusText(WiFi.status()));
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
@@ -336,15 +377,26 @@ void setup() {
   T_SET     = BASE + "/set";
 
   lcd.setCursor(0, 0); lcd.print("  Smart System  ");
-  lcd.setCursor(0, 1); lcd.print("Hidroponik IoT");
+  lcd.setCursor(0, 1); lcd.print("Mode: WiFi      ");
+  Serial.println("\n=== MODE KONEKSI: WiFi (" + String(WIFI_SSID) + ") ===");
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(250);
-  Serial.println(WiFi.status() == WL_CONNECTED ? "[WiFi] terhubung: " + WiFi.localIP().toString()
-                                               : String("[WiFi] belum terhubung, lanjut offline"));
-  tWifi = millis();
+  WiFi.setAutoReconnect(true);
+  Serial.printf("[WiFi] menghubungkan ke \"%s\"...\n", WIFI_SSID);
+  // 2 percobaan @7 dtk: setelah reset, router sering menolak percobaan pertama
+  for (int attempt = 0; attempt < 2 && WiFi.status() != WL_CONNECTED; attempt++) {
+    if (attempt) { WiFi.disconnect(); delay(200); }
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    unsigned long t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 7000) delay(250);
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[WiFi] belum terhubung (%s), lanjut offline & coba lagi otomatis\n", wifiStatusText(WiFi.status()));
+    scanWifi();                       // diagnosa: tampilkan WiFi yang terlihat
+    tWifi = millis() - 15000;         // coba lagi ~5 detik lagi
+  } else {
+    tWifi = millis();
+  }
 
   configTime(GMT_OFFSET_SEC, 0, "pool.ntp.org", "time.google.com");
 
@@ -354,7 +406,7 @@ void setup() {
   mqtt.setKeepAlive(30);
 
   lcd.clear();
-  Serial.printf("Dashboard: https://<username>.github.io/<repo>/#%s\n", DEVICE_CODE);
+  Serial.printf("Dashboard: https://syar02.github.io/Hidroponik/#%s\n", DEVICE_CODE);
   relayLastTick = millis();
 }
 
@@ -381,6 +433,8 @@ void loop() {
     if (now - tHistory >= HISTORY_INTERVAL) {
       tHistory = now;
       publishHistory();
+      // Tegaskan ulang status online (menimpa "offline" sisa sesi lama setelah restart)
+      mqtt.publish(T_STATUS.c_str(), "online", true);
     }
   }
 
