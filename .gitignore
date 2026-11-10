@@ -1,2 +1,3 @@
 # Kredensial WiFi lokal (berisi password)
 firmware/mode_wifi/wifi_config.h
+firmware/mode_otomatis/wifi_config.h

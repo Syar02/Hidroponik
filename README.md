@@ -14,7 +14,9 @@ Akses dashboard: `https://syar02.github.io/Hidroponik/#<KODE>`
 
 ## Pilih mode koneksi
 
-Perangkat ini punya **dua mode koneksi** dengan firmware terpisah. Sensor, kontrol pompa, LCD, topik MQTT, kode perangkat, dan link dashboard **sama** di kedua mode. Yang berbeda hanya cara ESP32 tersambung ke internet.
+**Disarankan: [Mode Otomatis](firmware/mode_otomatis/README.md)** (`firmware/mode_otomatis/`). Satu firmware memakai WiFi dan modem 4G sekaligus: bila jalur utama putus, ESP32 otomatis pindah ke jalur cadangan lalu kembali lagi. Modem boleh dicabut tanpa mengganggu sensor dan pompa. Dashboard menampilkan `Otomatis · WiFi` / `Otomatis · 4G`, serta status kedua jalur di menu Pengaturan.
+
+Firmware satu-jalur di bawah ini tetap tersedia bila hanya memakai salah satu jalur. Sensor, kontrol pompa, LCD, topik MQTT, kode perangkat, dan link dashboard **sama** di semua mode.
 
 | | **Mode WiFi** | **Mode Seluler 4G** |
 |---|---|---|
@@ -34,6 +36,7 @@ Perangkat ini punya **dua mode koneksi** dengan firmware terpisah. Sensor, kontr
 | File | Fungsi |
 |---|---|
 | `index.html` | Dashboard (Beranda, Statistik, Kontrol Pompa, Pengaturan). Satu file, tanpa build. |
+| `firmware/mode_otomatis/` | Firmware **mode otomatis** (WiFi + 4G, pindah jalur otomatis) dan panduannya. Daftar WiFi disimpan di `wifi_config.h`, yang tidak ikut ter-upload ke GitHub. |
 | `firmware/mode_wifi/` | Firmware **mode WiFi** dan panduannya. Password WiFi disimpan di `wifi_config.h`, yang tidak ikut ter-upload ke GitHub. |
 | `firmware/mode_lte_a7670e/` | Firmware **mode seluler 4G** (ESP32 + modem SIMCom A7670E) dan panduannya. |
 | `docs/mode_wifi/`, `docs/mode_lte_a7670e/` | Skema wiring masing-masing mode. |
@@ -43,6 +46,7 @@ Perangkat ini punya **dua mode koneksi** dengan firmware terpisah. Sensor, kontr
 ## 1. Upload firmware ESP32
 
 Ikuti panduan mode yang dipilih:
+- **Mode otomatis (disarankan):** [`firmware/mode_otomatis/README.md`](firmware/mode_otomatis/README.md)
 - **Mode WiFi:** [`firmware/mode_wifi/README.md`](firmware/mode_wifi/README.md)
 - **Mode seluler 4G:** [`firmware/mode_lte_a7670e/README.md`](firmware/mode_lte_a7670e/README.md)
 
@@ -102,7 +106,9 @@ Lalu buka `index.html` (bisa langsung dari file lokal) dengan `#hdcobaan123`. Si
 | `BASE/status` | ESP32 → web (retained, LWT) | `online` / `offline` |
 | `BASE/config` | ESP32 → web (retained) | `{"ph_min":5.5,"ph_max":8.5,"ph_off":0.00,"hyst":0.10}` |
 | `BASE/history` | ESP32 → web (retained, tiap 1 mnt) | `{"end":<epoch jam ini>,"ph":[24 nilai],"t":[...],"h":[...],"lux":[...]}`, berisi rata-rata per jam dari yang terlama sampai terbaru (`null` jika tidak ada data) |
-| `BASE/set` | web → ESP32 | `relay=on` · `relay=off` · `relay=toggle` · `mode=auto` · `mode=manual` · `ph_min=5.5` · `ph_max=8.5` · `ph_off=0.1` · `hyst=0.1` · `ping` |
+| `BASE/set` | web → ESP32 | `relay=on` · `relay=off` · `relay=toggle` · `mode=auto` · `mode=manual` · `ph_min=5.5` · `ph_max=8.5` · `ph_off=0.1` · `hyst=0.1` · `ping` · mode 4G & otomatis: `kuota` · `ussd=*808#,7` · `sms` |
+| `BASE/net` | ESP32 → web (retained, khusus mode otomatis) | Status kedua jalur: `{"active":"wifi","prio":"wifi","wifi":{"st":"ok","ssid":"...","rssi":-56},"lte":{"st":"nomodem"}}` |
+| `BASE/kuota` | ESP32 → web (retained, mode 4G & otomatis) | Hasil cek sisa paket. USSD: `{"kind":"ussd","q":"*808#,7,4,2,2","st":1,"text":"..."}` (`st` 0/2 = selesai, 1 = menu, `"wait"` = sedang menunggu). SMS: `{"kind":"sms","from":"XLSMART","date":"...","text":"..."}`. Bila gagal ada field `err` |
 
 Untuk debugging, Anda bisa memantau semua topik dengan MQTTX atau `mosquitto_sub -h broker.emqx.io -t 'aranus/<KODE>/hidro/#' -v`.
 

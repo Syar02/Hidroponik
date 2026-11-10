@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <!-- NAIKKAN nilai ini setiap kali index.html diubah, agar browser pengguna otomatis memuat versi baru -->
-<meta name="app-version" content="2026-11-10.2">
+<meta name="app-version" content="2026-11-10.4">
 <meta name="theme-color" content="#eef1f6">
 <title>Kebun Hidroponik</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -165,6 +165,11 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
 .msg{font-size:.82rem;margin-top:10px;min-height:1.2em;color:var(--fg2)}
 .share{display:flex;gap:8px;margin-top:6px}
 .share input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:10px 12px;font:600 .8rem ui-monospace,Consolas,monospace;color:var(--fg2)}
+.quota{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--bg);border:1px solid var(--line);font-size:.88rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;min-height:3.2em}
+.quota.err{color:var(--bad)}
+.qBtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.qBtns .btn{padding:12px;font-size:.88rem}
+.qBtns .btn.soft{background:var(--accent-soft);color:var(--accent)}
 .share button{border:0;border-radius:12px;padding:0 14px;background:var(--accent-soft);color:var(--accent);font-weight:700}
 
 /* ---------- Onboarding ---------- */
@@ -405,11 +410,25 @@ select{border:0;background:var(--accent-soft);color:var(--accent);font-weight:70
       <div class="kv"><span class="mut">Server MQTT</span><span id="sBroker">—</span></div>
       <div class="kv"><span class="mut">Status ESP32</span><span id="sDev">—</span></div>
       <div class="kv"><span class="mut">Mode koneksi</span><span id="sMode">—</span></div>
+      <div class="kv" id="sWifiRow" hidden><span class="mut">WiFi</span><span id="sWifi">—</span></div>
+      <div class="kv" id="sLteRow" hidden><span class="mut">Seluler 4G</span><span id="sLte">—</span></div>
       <div class="kv"><span class="mut">Sinyal</span><span id="sRssi">—</span></div>
       <div class="kv"><span class="mut">Waktu aktif</span><span id="sUp">—</span></div>
       <div class="kv"><span class="mut">Tegangan sensor pH</span><span id="sVolt">—</span></div>
       <div style="margin-top:10px;font-size:.78rem;color:var(--mut);font-weight:600">Link dashboard (bagikan ke anggota tim)</div>
       <div class="share"><input id="shareLink" readonly aria-label="Link dashboard"><button id="copyBtn">Salin</button></div>
+    </div>
+
+    <div class="card" id="quotaCard" hidden>
+      <div style="font-weight:700">Sisa paket data (kartu SIM)</div>
+      <p class="note" style="margin:4px 0 0">Modem mengirim kode USSD ke operator, lalu balasannya tampil di sini. Kalau balasan berupa menu, ketik nomor pilihan lalu tekan Kirim. Kalau operator membalas lewat SMS, tekan "SMS terakhir". Hati-hati: sebagian menu operator berisi pembelian paket.</p>
+      <div class="qBtns">
+        <button class="btn" id="quotaBtn">Cek kuota</button>
+        <button class="btn soft" id="smsBtn">SMS terakhir</button>
+      </div>
+      <div class="share" style="margin-top:10px"><input id="ussdIn" inputmode="tel" maxlength="40" placeholder="Kode USSD / nomor menu, mis. *808#" aria-label="Kode USSD atau nomor menu"><button id="ussdBtn">Kirim</button></div>
+      <div class="quota" id="quotaOut" role="status" aria-live="polite">Belum ada hasil. Tekan "Cek kuota".</div>
+      <p class="note" id="quotaMeta" style="margin-top:6px"></p>
     </div>
 
     <div class="card">
@@ -596,7 +615,7 @@ function connect() {
   });
   client.on("connect", () => {
     S.brokerOk = true;
-    client.subscribe([BASE + "/telemetry", BASE + "/status", BASE + "/config", BASE + "/history"]);
+    client.subscribe([BASE + "/telemetry", BASE + "/status", BASE + "/config", BASE + "/history", BASE + "/kuota", BASE + "/net"]);
     send("ping");
     render();
   });
@@ -610,6 +629,8 @@ function connect() {
       else if (k === "telemetry") { S.tele = JSON.parse(txt); S.teleAt = Date.now(); pushLive(S.tele); saveLive(); }
       else if (k === "config") { S.config = { ...S.config, ...JSON.parse(txt) }; S.configKnown = true; fillConfig(); }
       else if (k === "history") S.history = JSON.parse(txt);
+      else if (k === "net") S.netinfo = JSON.parse(txt);
+      else if (k === "kuota") { S.quota = JSON.parse(txt); if (S.quota.st !== "wait") S.quotaWait = 0; }
     } catch (e) { console.warn("Pesan tidak valid", topic, txt); }
     render();
   });
@@ -629,7 +650,8 @@ function render() {
 }
 
 // Mode koneksi perangkat: firmware mode_wifi mengirim net="wifi", mode_lte_a7670e mengirim net="lte".
-// Firmware lama tanpa field "net" dianggap WiFi.
+// Firmware lama tanpa field "net" dianggap WiFi. Firmware mode_otomatis juga mengirim
+// topik /net berisi status kedua jalur (WiFi & 4G).
 function netMode(t) {
   if (!S.tele) return null;
   return t.net === "lte"
@@ -659,7 +681,7 @@ function renderHome(t, ds) {
   $("#heroTime").textContent = ts ? "Diperbarui " + hhmm(ts) : "—";
   const nm = netMode(t);
   $("#modePill").hidden = !nm;
-  if (nm) { $("#modeText").textContent = nm.short; $("#modeIc").setAttribute("href", "#" + nm.ic); $("#heroNetIc").setAttribute("href", "#" + nm.ic); }
+  if (nm) { $("#modeText").textContent = S.netinfo ? `Otomatis · ${nm.tag}` : nm.short; $("#modeIc").setAttribute("href", "#" + nm.ic); $("#heroNetIc").setAttribute("href", "#" + nm.ic); }
   $("#heroRssi").textContent = isNum(t.rssi) ? `${nm ? nm.tag + " " : ""}${t.rssi} dBm` : (nm ? nm.tag : "—");
 }
 
@@ -900,13 +922,80 @@ function renderSettings(t, ds) {
   $("#sBroker").textContent = S.brokerOk ? "Terhubung" : "Terputus";
   $("#sDev").textContent = { ok: "Online", bad: S.brokerOk ? "Offline" : "—", wait: S.tele ? "Tidak mengirim data" : "Belum ada data" }[ds.cls];
   const nm = netMode(t);
-  $("#sMode").textContent = nm ? nm.long : "—";
+  const ni = S.netinfo;
+  $("#sMode").textContent = ni ? `Otomatis (utama ${ni.prio === "lte" ? "4G" : "WiFi"})` : (nm ? nm.long : "—");
+  $("#sWifiRow").hidden = $("#sLteRow").hidden = !ni;
+  if (ni) {
+    const role = l => ni.active === l ? " · aktif" : " · siaga";
+    const w = ni.wifi || {}, c = ni.lte || {};
+    $("#sWifi").textContent = {
+      ok: `${w.ssid || "Tersambung"}${isNum(w.rssi) ? ` · ${w.rssi} dBm` : ""}${role("wifi")}`,
+      noinet: `${w.ssid || "Tersambung"} · tanpa internet`,
+      none: "Tidak ada WiFi terdaftar di sekitar",
+      fail: "Gagal tersambung (cek password)",
+      off: "Tidak dipakai",
+    }[w.st] || "Mencari…";
+    $("#sLte").textContent = {
+      ok: `${c.op || "Siap"}${isNum(c.csq) ? ` · CSQ ${c.csq}` : ""}${role("lte")}`,
+      noinet: "Ada sinyal, internet tidak jalan (kuota habis?)",
+      nomodem: "Modem tidak terpasang / mati",
+      nosim: "Kartu SIM tidak terbaca",
+      cari: `Mencari sinyal${isNum(c.csq) ? ` (CSQ ${c.csq})` : ""}`,
+      nodata: "Mengaktifkan data…",
+    }[c.st] || "Memeriksa modem…";
+  }
   $("#sRssi").textContent = isNum(t.rssi) ? `${t.rssi} dBm${isNum(t.csq) && t.net === "lte" ? ` · CSQ ${t.csq}` : ""}` : "—";
   $("#sUp").textContent = isNum(t.up) ? dur(t.up) : "—";
   $("#sVolt").textContent = isNum(t.v) ? `${fmt(t.v, 3)} V` : "—";
   $("#shareLink").value = location.origin + location.pathname + "#" + S.code;
   $("#cfgBtn").disabled = !S.brokerOk;
+  renderQuota(t, ds);
 }
+
+/* ---- Sisa paket data (khusus mode 4G) ---- */
+const USSD_ST = { 0: "selesai", 1: "menu — ketik nomor pilihan lalu Kirim", 2: "selesai", 4: "tidak didukung operator", 5: "waktu habis" };
+const QUOTA_WAIT_MS = 90000;
+function renderQuota(t, ds) {
+  const ni = S.netinfo;
+  const lte = ni ? !["nomodem", "nosim"].includes(ni.lte && ni.lte.st) : t.net === "lte";
+  $("#quotaCard").hidden = !lte;
+  if (!lte) return;
+  const q = S.quota, waiting = S.quotaWait && Date.now() - S.quotaWait < QUOTA_WAIT_MS;
+  const busy = waiting || (q && q.st === "wait" && q.ts && Date.now() / 1000 - q.ts < QUOTA_WAIT_MS / 1000);
+  const off = !S.brokerOk || ds.cls !== "ok" || busy;
+  ["#quotaBtn", "#smsBtn", "#ussdBtn"].forEach(id => $(id).disabled = off);
+  const out = $("#quotaOut"), meta = $("#quotaMeta");
+  out.classList.remove("err");
+  if (busy) { out.textContent = "Menunggu balasan operator… (biasanya 10–30 detik)"; meta.textContent = q && q.q && q.st === "wait" ? `USSD ${q.q.replaceAll(",", " › ")}` : ""; return; }
+  if (S.quotaWait) { S.quotaWait = 0; }
+  if (!q) { out.textContent = 'Belum ada hasil. Tekan "Cek kuota".'; meta.textContent = ""; return; }
+  if (q.err) { out.textContent = q.err; out.classList.add("err"); }
+  else out.textContent = q.text || (q.kind === "ussd" ? "(balasan kosong)" : "—");
+  const when = q.ts ? new Date(q.ts * 1000).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  meta.textContent = q.kind === "sms"
+    ? [q.from && `SMS dari ${q.from}`, q.date && `diterima ${q.date}`, when && `dibaca ${when}`].filter(Boolean).join(" · ")
+    : [q.q && `USSD ${q.q.replaceAll(",", " › ")}`, USSD_ST[q.st], when].filter(Boolean).join(" · ");
+  $("#ussdIn").placeholder = q.kind === "ussd" && q.st === 1 ? "Nomor pilihan menu, mis. 1" : "Kode USSD, mis. *808#";
+}
+function quotaSend(cmd) {
+  if (!send(cmd)) return;
+  S.quotaWait = Date.now();
+  render();
+  setTimeout(render, QUOTA_WAIT_MS + 1000);
+}
+$("#quotaBtn").onclick = () => quotaSend("kuota");
+$("#smsBtn").onclick = () => quotaSend("sms");
+$("#ussdBtn").onclick = () => {
+  const v = $("#ussdIn").value.replace(/\s+/g, "");
+  if (!/^[0-9*#,]{1,40}$/.test(v)) { $("#quotaOut").textContent = "Isi kode USSD (angka, * dan #), mis. *808#, atau nomor pilihan menu"; $("#quotaOut").classList.add("err"); return; }
+  // Nomor menu saja -> sambung ke urutan sebelumnya. Seluruh urutan dijalankan ulang
+  // oleh modem sekaligus, karena sesi USSD lama sudah ditutup.
+  const q = S.quota, menu = q && q.kind === "ussd" && q.st === 1 && q.q;
+  const seq = /^[0-9]+$/.test(v) && menu ? `${q.q},${v}` : v;
+  $("#ussdIn").value = "";
+  quotaSend("ussd=" + seq);
+};
+$("#ussdIn").addEventListener("keydown", e => { if (e.key === "Enter") $("#ussdBtn").click(); });
 
 /* =================== Start =================== */
 /* ---- Nama pemilik ---- */

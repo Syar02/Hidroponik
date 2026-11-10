@@ -47,6 +47,15 @@ const char* APN_PASS = "";
 // Kode unik perangkat (sama dengan link dashboard .../#kode)
 const char* DEVICE_CODE = "hd7p2kq9vm";
 
+// Kode USSD cek sisa paket data (perintah MQTT "kuota"). Boleh berupa urutan
+// menu dipisah koma: kode awal lalu nomor pilihan. Kosongkan ("") agar dipilih
+// otomatis dari nama operator:
+//   XL/Axis   : *808#,7,4,2,2  (MyInfo > Cek Kuota > lewati 2 layar promo;
+//               teruji 10-11-2026, hasilnya daftar paket untuk dipilih)
+//   Telkomsel : *888#   Smartfren : *995#   lainnya (Indosat/IM3/Tri) : *123#
+// Menu USSD bisa diubah operator sewaktu-waktu; isi manual bila tidak sesuai.
+const char* KUOTA_USSD = "";
+
 const char* MQTT_HOST = "broker.emqx.io";
 const uint16_t MQTT_PORT = 1883;
 
@@ -79,7 +88,7 @@ BH1750 lightMeter;
 Preferences prefs;
 HardwareSerial SerialAT(2);
 
-String BASE, T_TELE, T_STATUS, T_CONFIG, T_HISTORY, T_SET;
+String BASE, T_TELE, T_STATUS, T_CONFIG, T_HISTORY, T_SET, T_KUOTA;
 
 // Konfigurasi (disimpan di flash)
 volatile float phMin = 5.5, phMax = 8.5, phOffset = 0.0, phHyst = 0.10;
@@ -475,6 +484,163 @@ bool publishHistory() {
   return mqttPublish(T_HISTORY, buf, true);
 }
 
+// =====================================================================
+//  Cek sisa paket: USSD & SMS (inti 0). Hasil -> topik BASE/kuota (retained)
+// =====================================================================
+String jsonEsc(const String& s) {
+  String o; o.reserve(s.length() + 16);
+  for (unsigned i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (c == '"' || c == '\\') { o += '\\'; o += c; }
+    else if (c == '\n') o += "\\n";
+    else if ((uint8_t)c >= 0x20) o += c;
+  }
+  return o;
+}
+
+// Teks UCS2 dikirim modem sebagai heksa ("0053006900730061...") -> ubah ke UTF-8
+String ucs2Decode(const String& h) {
+  if (h.length() < 4 || h.length() % 4) return h;
+  for (unsigned i = 0; i < h.length(); i++) if (!isxdigit(h[i])) return h;
+  String o;
+  for (unsigned i = 0; i + 3 < h.length(); i += 4) {
+    uint16_t c = strtol(h.substring(i, i + 4).c_str(), nullptr, 16);
+    if (c == 0x0D) continue;
+    if (c < 0x80) o += (char)c;
+    else if (c < 0x800) { o += (char)(0xC0 | (c >> 6)); o += (char)(0x80 | (c & 0x3F)); }
+    else { o += (char)(0xE0 | (c >> 12)); o += (char)(0x80 | ((c >> 6) & 0x3F)); o += (char)(0x80 | (c & 0x3F)); }
+  }
+  return o;
+}
+
+// Tebak UCS2 hanya bila semua heksa & diawali "00" (huruf Latin dalam UCS2)
+String maybeUcs2(const String& s) {
+  return (s.length() >= 8 && s.startsWith("00")) ? ucs2Decode(s) : s;
+}
+
+String kuotaCode() {
+  if (strlen(KUOTA_USSD)) return KUOTA_USSD;
+  String op = operatorName(); op.toUpperCase();
+  if (op.indexOf("XL") >= 0 || op.indexOf("AXIS") >= 0 || op.startsWith("51011")) return "*808#,7,4,2,2";
+  if (op.indexOf("TELKOMSEL") >= 0 || op.indexOf("TSEL") >= 0 || op.startsWith("51010")) return "*888#";
+  if (op.indexOf("SMART") >= 0 || op.startsWith("51009") || op.startsWith("51028")) return "*995#";
+  return "*123#";
+}
+
+// USSD membuat modem pindah sebentar ke 2G/3G sehingga MQTT bisa putus.
+// Hasil yang gagal terkirim disimpan lalu dikirim ulang setelah MQTT tersambung.
+String kuotaPending;
+
+void publishKuota(const String& json) {
+  if (mqttPublish(T_KUOTA, json.c_str(), true)) { kuotaPending = ""; return; }
+  Serial.println("[KUOTA] hasil belum terkirim, dikirim ulang setelah MQTT tersambung");
+  kuotaPending = json;
+}
+
+String nowField() {
+  time_t now = time(nullptr);
+  return String(",\"ts\":") + String((long)(now > 1700000000 ? now : 0)) + "}";
+}
+
+// Satu langkah USSD. Kembali: status (0 selesai, 1 menu, 2.. lihat stTxt) atau -1 bila gagal.
+int ussdStep(const String& code, String& text, String& err) {
+  String buf; text = ""; err = "";
+  if (at("AT+CUSD=1,\"" + code + "\",15", 10000) != 1) {
+    err = "Modem menolak perintah USSD"; String r = atResp; r.trim(); if (r.length()) err += " (" + r + ")";
+    return -1;
+  }
+  int i = atResp.indexOf("+CUSD:");
+  if (i >= 0) buf = atResp.substring(i);
+  else if (!waitFor("+CUSD:", 30000, &buf)) { err = "Tidak ada balasan dari operator dalam 30 detik"; return -1; }
+  // Teks balasan bisa terdiri dari beberapa baris: baca sampai tanda kutip penutup
+  String l; unsigned long t0 = millis();
+  while (buf.indexOf('"') >= 0 && buf.indexOf('"') == buf.lastIndexOf('"') && millis() - t0 < 5000)
+    if (readLine(l, 1000)) { buf += '\n'; buf += l; }
+  buf.trim();
+  int st = buf.substring(6).toInt();                     // "+CUSD: <st>,"<teks>",<dcs>"
+  int a = buf.indexOf('"'), b = buf.lastIndexOf('"');
+  text = (a >= 0 && b > a) ? buf.substring(a + 1, b) : "";
+  int dcs = (b > 0 && buf.indexOf(',', b) > 0) ? buf.substring(buf.indexOf(',', b) + 1).toInt() : 15;
+  text = (dcs == 72 || (dcs & 0x0C) == 0x08) ? ucs2Decode(text) : maybeUcs2(text);
+  text.trim();
+  return st;
+}
+
+// Jalankan kode USSD, boleh berupa urutan menu dipisah koma: "*808#,7,1"
+// (kode awal lalu nomor pilihan menu). Seluruh urutan dijalankan sekaligus di
+// modem, jadi tidak terganggu MQTT yang putus sebentar selama USSD.
+void runUssd(String seq) {
+  seq.trim(); seq.replace(" ", "");
+  bool ok = seq.length() > 0 && seq.length() <= 60 && seq[0] != ',' && seq[seq.length() - 1] != ',';
+  for (unsigned i = 0; ok && i < seq.length(); i++)
+    ok = isdigit(seq[i]) || seq[i] == '*' || seq[i] == '#' || seq[i] == ',';
+  if (!ok) {
+    publishKuota("{\"kind\":\"ussd\",\"q\":\"" + jsonEsc(seq) + "\",\"err\":\"Kode tidak valid (hanya angka, *, # dan koma)\"" + nowField());
+    return;
+  }
+  Serial.printf("[KUOTA] USSD %s\n", seq.c_str());
+  publishKuota("{\"kind\":\"ussd\",\"q\":\"" + seq + "\",\"st\":\"wait\"" + nowField());
+
+  const char* stTxt[6] = {"selesai", "menu", "diakhiri jaringan", "dijawab perangkat lain", "tidak didukung", "waktu habis"};
+  at("AT+CSCS=\"IRA\"");
+  at("AT+CUSD=2", 3000);                                 // tutup sesi lama bila masih terbuka
+  String text, err; int st = -1, from = 0;
+  while (true) {
+    int c = seq.indexOf(',', from);
+    String step = seq.substring(from, c < 0 ? seq.length() : c);
+    st = ussdStep(step, text, err);
+    Serial.printf("[KUOTA] %s -> %s\n", step.c_str(), st < 0 ? err.c_str() : (st <= 5 ? stTxt[st] : "?"));
+    if (c < 0 || st != 1) {
+      if (c >= 0 && st >= 0) err = "Menu berhenti sebelum pilihan \"" + seq.substring(c + 1) + "\" (USSD " + stTxt[st <= 5 ? st : 5] + ")";
+      break;
+    }
+    from = c + 1;
+  }
+  if (st == 1) at("AT+CUSD=2", 3000);                    // jangan biarkan menu menggantung
+  if (text.length()) Serial.printf("[KUOTA] balasan:\n%s\n", text.c_str());
+  String j = "{\"kind\":\"ussd\",\"q\":\"" + seq + "\",\"st\":" + String(st) + ",\"text\":\"" + jsonEsc(text) + "\"";
+  if (!err.length() && !text.length() && st >= 2) err = String("USSD ") + stTxt[st <= 5 ? st : 5];
+  if (err.length()) j += ",\"err\":\"" + jsonEsc(err) + "\"";
+  publishKuota(j + nowField());
+}
+
+void cancelUssd() {
+  at("AT+CUSD=2", 5000);
+  publishKuota("{\"kind\":\"ussd\",\"q\":\"\",\"st\":2,\"text\":\"Sesi USSD dibatalkan\"" + nowField());
+}
+
+// Banyak operator mengirim info kuota lewat SMS -> ambil SMS terbaru di kartu SIM
+void readLastSms() {
+  Serial.println("[KUOTA] membaca SMS terbaru");
+  at("AT+CMGF=1"); at("AT+CSCS=\"IRA\""); at("AT+CSDH=0");
+  if (at("AT+CMGL=\"ALL\"", 15000) != 1) {
+    publishKuota("{\"kind\":\"sms\",\"err\":\"Gagal membaca SMS dari kartu SIM\"" + nowField());
+    return;
+  }
+  // Format: +CMGL: <idx>,"<stat>","<pengirim>",,"<waktu>"\n<isi>\n...
+  int best = -1, bestPos = -1, p = 0;
+  while ((p = atResp.indexOf("+CMGL:", p)) >= 0) {
+    int idx = atResp.substring(p + 6).toInt();
+    if (idx >= best) { best = idx; bestPos = p; }
+    p += 6;
+  }
+  if (bestPos < 0) { publishKuota("{\"kind\":\"sms\",\"text\":\"Tidak ada SMS di kartu SIM\"" + nowField()); return; }
+  int eol = atResp.indexOf('\n', bestPos);
+  String head = atResp.substring(bestPos, eol < 0 ? atResp.length() : eol);
+  int nx = atResp.indexOf("+CMGL:", eol);
+  String body = eol < 0 ? "" : atResp.substring(eol + 1, nx < 0 ? atResp.length() : nx);
+  body.trim();
+  String from, when;                                        // ambil field berkutip ke-2 dan ke-3/4
+  int q[10], nq = 0;
+  for (unsigned i = 0; i < head.length() && nq < 10; i++) if (head[i] == '"') q[nq++] = i;
+  if (nq >= 4) from = maybeUcs2(head.substring(q[2] + 1, q[3]));
+  if (nq >= 6) when = head.substring(q[nq - 2] + 1, q[nq - 1]);
+  String text = maybeUcs2(body);
+  Serial.printf("[KUOTA] SMS dari %s (%s): %s\n", from.c_str(), when.c_str(), text.c_str());
+  publishKuota("{\"kind\":\"sms\",\"from\":\"" + jsonEsc(from) + "\",\"date\":\"" + jsonEsc(when) +
+               "\",\"text\":\"" + jsonEsc(text.substring(0, 700)) + "\"" + nowField());
+}
+
 void handleCommand(String msg) {
   msg.trim(); msg.toLowerCase();
   Serial.printf("[MQTT] perintah: %s\n", msg.c_str());
@@ -502,6 +668,12 @@ void handleCommand(String msg) {
   } else if (key == "ping") {
     publishConfig();
     publishHistory();
+  } else if (key == "kuota") {               // cek sisa paket dengan kode bawaan operator
+    runUssd(kuotaCode());
+  } else if (key == "ussd") {                // kode USSD lain, boleh urutan menu: ussd=*808#,7
+    if (val == "batal") cancelUssd(); else runUssd(val);
+  } else if (key == "sms") {                 // baca SMS terbaru (info kuota sering dikirim via SMS)
+    readLastSms();
   }
   forcePublish = true;
 }
@@ -541,6 +713,7 @@ bool mqttStart() {
   }
   publishConfig();
   publishHistory();
+  if (kuotaPending.length()) publishKuota(kuotaPending);
   forcePublish = true;
   return true;
 }
@@ -687,6 +860,7 @@ void setup() {
   T_CONFIG  = BASE + "/config";
   T_HISTORY = BASE + "/history";
   T_SET     = BASE + "/set";
+  T_KUOTA   = BASE + "/kuota";
 
   setenv("TZ", "WIB-7", 1);   // zona waktu lokal untuk reset durasi pompa harian
   tzset();

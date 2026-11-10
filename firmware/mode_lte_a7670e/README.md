@@ -52,6 +52,24 @@ Skema: [`docs/mode_lte_a7670e/Skema_Mode_LTE_A7670E.jpg`](../../docs/mode_lte_a7
   - Jaringan hilang ±2 menit: modem di-restart.
   - MQTT gagal terus: koneksi data diaktifkan ulang.
 
+## Cek sisa paket data
+
+Buka menu **Pengaturan** di dashboard. Kartu **"Sisa paket data (kartu SIM)"** hanya muncul saat perangkat dalam mode 4G.
+
+| Tombol / perintah MQTT ke `BASE/set` | Fungsi |
+|---|---|
+| **Cek kuota** / `kuota` | Mengirim kode USSD bawaan operator (`KUOTA_USSD` di firmware) |
+| Kolom kode + **Kirim** / `ussd=<kode>` | Mengirim kode USSD lain. Boleh berupa urutan menu dipisah koma, mis. `ussd=*808#,7,4` |
+| **SMS terakhir** / `sms` | Membaca SMS terbaru di kartu SIM, karena sebagian operator membalas info kuota lewat SMS |
+
+Hasilnya dikirim ke topik `aranus/<KODE>/hidro/kuota`, jadi bisa juga dibaca dengan MQTTX.
+
+- **Kalau balasan berupa menu**, ketik nomor pilihan lalu tekan Kirim. Dashboard menyambungkan nomor itu ke urutan sebelumnya, lalu modem menjalankan ulang seluruh urutan sekaligus.
+- **Urutan bawaan XL:** `*808#,7,4,2,2` (MyInfo › Cek Kuota › lewati dua layar promo). Hasilnya daftar paket; pilih nomor paket untuk melihat sisa kuotanya. Contoh hasil: *"Sisa kuota paket Bulkshare Anda: 1015MB ... berlaku s.d 09/12/2026"*.
+- **Operator bisa mengubah menu USSD kapan saja.** Kalau tombol Cek kuota tidak lagi sampai ke info kuota, ubah `KUOTA_USSD` di firmware atau ketik kode sendiri di kolom kode.
+- **Hati-hati:** menu utama `*808#` juga berisi pembelian paket. Pastikan nomor yang diketik memang menu info.
+- **Selama USSD berjalan,** modem bisa berpindah sebentar ke jaringan 2G/3G. Pengiriman data sensor bisa tertunda beberapa detik, dan bila MQTT sempat putus, firmware menyambung ulang otomatis lalu mengirim hasil cek kuota setelah tersambung.
+
 ## Catatan
 
 - **IMEI modem harus terdaftar di Indonesia.** Cek di imei.kemenperin.go.id. Kalau tidak terdaftar, operator memblokir koneksi data walaupun sinyal ada.
