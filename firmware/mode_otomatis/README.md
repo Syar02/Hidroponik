@@ -36,7 +36,7 @@ Sensor, kontrol pompa, dan LCD berjalan di inti 1 ESP32, terpisah dari urusan ja
 3. Di Arduino IDE, pasang library **PubSubClient**, **Adafruit SHT31 Library**, **BH1750**, dan **LiquidCrystal I2C**.
 4. Pilih board **ESP32 Dev Module**, lalu upload.
 
-Wiring modem sama dengan mode 4G: [`docs/mode_lte_a7670e/Skema_Mode_LTE_A7670E.jpg`](../../docs/mode_lte_a7670e/Skema_Mode_LTE_A7670E.jpg). Modem boleh tidak dipasang; firmware tetap jalan dengan WiFi saja.
+Skema: [`docs/mode_otomatis/Skema_Mode_Otomatis.jpg`](../../docs/mode_otomatis/Skema_Mode_Otomatis.jpg). Wiring modem sama dengan mode 4G. Modem boleh tidak dipasang; firmware tetap jalan dengan WiFi saja.
 
 ## Cara melihat jalur yang sedang dipakai
 

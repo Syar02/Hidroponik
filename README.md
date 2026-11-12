@@ -39,7 +39,8 @@ Firmware satu-jalur di bawah ini tetap tersedia bila hanya memakai salah satu ja
 | `firmware/mode_otomatis/` | Firmware **mode otomatis** (WiFi + 4G, pindah jalur otomatis) dan panduannya. Daftar WiFi disimpan di `wifi_config.h`, yang tidak ikut ter-upload ke GitHub. |
 | `firmware/mode_wifi/` | Firmware **mode WiFi** dan panduannya. Password WiFi disimpan di `wifi_config.h`, yang tidak ikut ter-upload ke GitHub. |
 | `firmware/mode_lte_a7670e/` | Firmware **mode seluler 4G** (ESP32 + modem SIMCom A7670E) dan panduannya. |
-| `docs/mode_wifi/`, `docs/mode_lte_a7670e/` | Skema wiring masing-masing mode. |
+| `docs/mode_otomatis/`, `docs/mode_wifi/`, `docs/mode_lte_a7670e/` | Skema wiring masing-masing mode. |
+| `docs/Dokumen_Teknis_Hidroponik_IoT_v2.*` | Dokumen teknis versi 2.0 (Mode Otomatis WiFi + 4G) dalam .pdf, .docx, .doc. Versi 1.0 tetap disimpan. |
 | `docs/` | Dokumen teknis dan ilustrasi prototipe. |
 | `simulator/sim_esp32.py` | Simulator ESP32 untuk mencoba dashboard tanpa hardware (bisa meniru kedua mode). |
 
@@ -109,6 +110,7 @@ Lalu buka `index.html` (bisa langsung dari file lokal) dengan `#hdcobaan123`. Si
 | `BASE/set` | web → ESP32 | `relay=on` · `relay=off` · `relay=toggle` · `mode=auto` · `mode=manual` · `ph_min=5.5` · `ph_max=8.5` · `ph_off=0.1` · `hyst=0.1` · `ping` · mode 4G & otomatis: `kuota` · `ussd=*808#,7` · `sms` |
 | `BASE/net` | ESP32 → web (retained, khusus mode otomatis) | Status kedua jalur: `{"active":"wifi","prio":"wifi","wifi":{"st":"ok","ssid":"...","rssi":-56},"lte":{"st":"nomodem"}}` |
 | `BASE/kuota` | ESP32 → web (retained, mode 4G & otomatis) | Hasil cek sisa paket. USSD: `{"kind":"ussd","q":"*808#,7,4,2,2","st":1,"text":"..."}` (`st` 0/2 = selesai, 1 = menu, `"wait"` = sedang menunggu). SMS: `{"kind":"sms","from":"XLSMART","date":"...","text":"..."}`. Bila gagal ada field `err` |
+| `BASE/kuota_log` | STM32 → web (retained, khusus firmware [hidroponik-stm32](../hidroponik-stm32/README.md#log-sisa-kuota)) | Log sisa kuota (maks. 12 catatan, terlama → terbaru): `{"auto_h":12,"next":<epoch>,"items":[{"ts":<epoch>,"kb":1039360,"exp":20261209}]}`. Tampil di **Pengaturan › Log sisa kuota**. Perintah: `kuota_auto=<jam>` (0 = mati), `kuota_log=hapus` |
 
 Untuk debugging, Anda bisa memantau semua topik dengan MQTTX atau `mosquitto_sub -h broker.emqx.io -t 'aranus/<KODE>/hidro/#' -v`.
 
